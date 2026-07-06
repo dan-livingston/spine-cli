@@ -17,6 +17,7 @@ import { encodeApng } from "../encode/apng.ts";
 import { encodeGif } from "../encode/gif.ts";
 import { encodePng, writePngSequence } from "../encode/png.ts";
 import { encodeVideo, findFfmpeg } from "../encode/video.ts";
+import { encodeWebp, findImg2webp } from "../encode/webp.ts";
 import { resolveInputs } from "../input/resolve.ts";
 import { isFormat, planOutput } from "../render/output-path.ts";
 import { RenderPool } from "../render/renderer.ts";
@@ -193,13 +194,22 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 		return;
 	}
 
-	// mp4/webm/webp need a real ffmpeg; fail early with a clear message before launching.
+	// video needs an external encoder; fail early with a clear message before
+	// launching. mp4/webm use ffmpeg; webp uses img2webp (see encode/webp.ts).
 	let ffmpeg: string | null = null;
-	if (format === "mp4" || format === "webm" || format === "webp") {
+	let img2webp: string | null = null;
+	if (format === "mp4" || format === "webm") {
 		ffmpeg = await findFfmpeg();
 		if (!ffmpeg) {
 			throw new Error(
 				`ffmpeg not found on PATH; install ffmpeg to render ${format}. pngseq, png, gif and apng work without it`,
+			);
+		}
+	} else if (format === "webp") {
+		img2webp = await findImg2webp();
+		if (!img2webp) {
+			throw new Error(
+				"img2webp not found on PATH; install libwebp to render webp. pngseq, png, gif and apng work without it",
 			);
 		}
 	}
@@ -222,6 +232,7 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 			format,
 			quality,
 			ffmpeg,
+			img2webp,
 		});
 	} finally {
 		await pool.close();
@@ -243,6 +254,7 @@ interface RunParams {
 	// webp only: 0-100 lossy quality; undefined means lossless.
 	quality?: number;
 	ffmpeg: string | null;
+	img2webp: string | null;
 }
 
 // group items by a key, preserving first-seen order (Map keeps insertion order).
@@ -358,7 +370,6 @@ function buildRequest(animation: string, params: RunParams): RenderRequest {
 		width: params.width,
 		height: params.height,
 		background: params.background,
-		premultipliedAlpha: true,
 	};
 	// a single still: one exact time, ignore duration/loops
 	if (params.format === "png") {
@@ -395,16 +406,12 @@ async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void>
 		await writeFile(job.target.path, encodeApng(frames, params.fps));
 	} else if (params.format === "gif") {
 		await writeFile(job.target.path, encodeGif(frames, params.fps));
-	} else if (params.format === "mp4" || params.format === "webm" || params.format === "webp") {
+	} else if (params.format === "mp4" || params.format === "webm") {
 		if (!params.ffmpeg) throw new Error("ffmpeg unavailable");
-		await encodeVideo(
-			params.ffmpeg,
-			job.target.path,
-			frames,
-			params.fps,
-			params.format,
-			params.quality,
-		);
+		await encodeVideo(params.ffmpeg, job.target.path, frames, params.fps, params.format);
+	} else if (params.format === "webp") {
+		if (!params.img2webp) throw new Error("img2webp unavailable");
+		await encodeWebp(params.img2webp, job.target.path, frames, params.fps, params.quality);
 	}
 }
 

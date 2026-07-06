@@ -14,7 +14,8 @@ Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG texture
 - **Rendering**: `spine-ts` WebGL backend in headless Chromium (Playwright), screenshotting frames. WebGL for full mesh + clipping fidelity (both common in targets).
 - **Version dispatch**: bundles `spine-ts` 4.0 + 4.2, picks per-skeleton from embedded `"spine"` field (format broke at 4.1; targets straddle it).
 - **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir or glob for batch.
-- **Video** (`mp4`/`webm`/`webp`): shells out to ffmpeg, optional external binary (detected on PATH). `mp4` defaults white (no alpha); other formats default transparent. Animated `webp` is lossless with full alpha by default (libwebp); pass `--quality 0-100` for a smaller lossy file.
+- **Video** (`mp4`/`webm`): shells out to ffmpeg (detected on PATH). `mp4` defaults white (no alpha); `webm` defaults transparent.
+- **Animated webp**: shells out to `img2webp` (a libwebp tool), not ffmpeg. Every frame is a key frame (`-kmax 0`) so nothing blends across frames and transparency stays exact; ffmpeg's libwebp blends with no disposal control and leaves trails behind moving semi-transparent pixels. Lossless with full alpha by default; pass `--quality 0-100` for a smaller lossy file.
 
 ## Usage
 
@@ -64,7 +65,7 @@ spine-cli render VaultSetup.json -a State0-OpenIdle --format apng --fit shared \
 ## Prerequisites
 
 - Chrome or Chromium on the system (rendering runs headless via `playwright-core`, launched with `channel: "chrome"`).
-- `ffmpeg` on PATH only for `mp4`/`webm`/`webp`; the other image formats (`pngseq`, `png`, `gif`, `apng`) need nothing extra.
+- `ffmpeg` on PATH only for `mp4`/`webm`; `img2webp` (from libwebp) on PATH only for `webp`. The image formats (`pngseq`, `png`, `gif`, `apng`) need nothing extra.
 
 ## Scripts
 
