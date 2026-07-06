@@ -1,0 +1,46 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # OIDC trusted publishing + provenance
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: pnpm/action-setup@v6
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: pnpm
+                  registry-url: https://registry.npmjs.org
+
+            - run: pnpm install --frozen-lockfile
+
+            - run: pnpm check
+
+            - run: pnpm test
+
+            - run: pnpm build
+
+            # skip if this version is already on npm (e.g. the bootstrap v1.0.0 tag)
+            - id: check
+              run: |
+                  name=$(node -p "require('./package.json').name")
+                  version=$(node -p "require('./package.json').version")
+                  if npm view "$name@$version" version >/dev/null 2>&1; then
+                      echo "exists=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "exists=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            # npm publish (not pnpm) for OIDC: pnpm 11 OIDC publish is broken (pnpm#11513)
+            - if: steps.check.outputs.exists == 'false'
+              run: npm publish
