@@ -161,9 +161,13 @@ async function renderAnimation(id: number, req: RenderRequest): Promise<RenderRe
 
 	applySkin(s, req.skin);
 
+	// loop the track when the clip runs past one animation length (--loops, or an
+	// explicit longer --duration) so extra frames replay instead of freezing.
+	const loop = req.times === undefined && (req.loops > 1 || req.duration > anim.duration);
+
 	// pose at t=0 so bounds/first frame are meaningful
 	s.skeleton.setToSetupPose();
-	s.state.setAnimation(0, req.animation, false);
+	s.state.setAnimation(0, req.animation, loop);
 	s.state.update(0);
 	s.state.apply(s.skeleton);
 	updateWorld(s);
@@ -270,8 +274,22 @@ function renderFrame(s: Session, w: number, h: number, req: RenderRequest): stri
 
 	const buf = new Uint8Array(w * h * 4);
 	gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+	// the framebuffer holds premultiplied rgb; png/apng/gif want straight alpha,
+	// so divide rgb back out or soft edges composite too dark.
+	if (req.premultipliedAlpha) unpremultiply(buf);
 	flipRows(buf, w, h);
 	return toBase64(buf);
+}
+
+// convert premultiplied rgba to straight alpha in place. a=0/255 are no-ops.
+function unpremultiply(buf: Uint8Array): void {
+	for (let i = 0; i < buf.length; i += 4) {
+		const a = buf[i + 3];
+		if (a === 0 || a === 255) continue;
+		buf[i] = Math.min(255, Math.round((buf[i] * 255) / a));
+		buf[i + 1] = Math.min(255, Math.round((buf[i + 1] * 255) / a));
+		buf[i + 2] = Math.min(255, Math.round((buf[i + 2] * 255) / a));
+	}
 }
 
 // gl readback is bottom-up; flip to top-down in place.

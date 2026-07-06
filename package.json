@@ -17,7 +17,7 @@
 	},
 	"scripts": {
 		"dev": "vp pack --watch",
-		"build": "node scripts/build-harness.mjs && vp pack",
+		"build": "vp check && node scripts/build-harness.mjs && vp pack",
 		"build:harness": "node scripts/build-harness.mjs",
 		"check": "vp check",
 		"test": "vp test",

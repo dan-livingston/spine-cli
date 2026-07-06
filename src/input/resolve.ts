@@ -47,19 +47,16 @@ export async function resolveInputs(
 	const jsonPaths = await collectJsonPaths(target);
 	if (jsonPaths.length === 0) throw new Error(`no skeleton json found for "${target}"`);
 
-	// an explicit --atlas only makes sense for a single input
-	if (atlasOverride && jsonPaths.length === 1) {
-		return [await resolveInput(jsonPaths[0], atlasOverride)];
-	}
-
+	// an explicit --atlas applies to every resolved skeleton (shared atlas).
 	const inputs: ResolvedInput[] = [];
 	for (const path of jsonPaths) {
 		try {
-			inputs.push(await resolveInput(path));
+			inputs.push(await resolveInput(path, atlasOverride));
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
-			if (onSkip) onSkip(path, reason);
-			else throw err;
+			// a single explicit target surfaces its error; a batch skips and continues
+			if (!onSkip || jsonPaths.length === 1) throw err;
+			onSkip(path, reason);
 		}
 	}
 	if (inputs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);

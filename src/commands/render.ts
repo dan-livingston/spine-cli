@@ -73,10 +73,33 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	});
 	const batch = inputs.length > 1;
 
-	// plan every job up front so --dry-run and naming share one code path.
+	// plan every job up front so --dry-run and naming share one code path. bad
+	// inputs (missing texture, no animation) are skipped in a batch and surfaced
+	// for a single target, mirroring resolveInputs' skip-and-continue design.
 	const jobs: Job[] = [];
+	const skip = (input: ResolvedInput, reason: string): boolean => {
+		if (!batch) throw new Error(`${input.skeletonName}: ${reason}`);
+		console.warn(`skip ${input.jsonPath}: ${reason}`);
+		return true;
+	};
 	for (const input of inputs) {
-		const animations = selectAnimations(input, options.animation);
+		const missing = input.atlas.pages.filter((p) => !p.textureExists);
+		if (missing.length > 0) {
+			if (
+				skip(
+					input,
+					`atlas texture missing on disk: ${missing.map((p) => p.texturePath).join(", ")}`,
+				)
+			)
+				continue;
+		}
+		let animations: string[];
+		try {
+			animations = selectAnimations(input, options.animation);
+		} catch (err) {
+			if (skip(input, err instanceof Error ? err.message : String(err))) continue;
+			animations = [];
+		}
 		const includeAnimation = batch || animations.length > 1;
 		for (const animation of animations) {
 			const ctx: OutputContext = {
@@ -90,6 +113,21 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 			};
 			jobs.push({ input, animation, includeAnimation, target: planOutput(ctx) });
 		}
+	}
+
+	if (jobs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);
+
+	// two skeletons with the same basename from different dirs would map to the
+	// same output and silently overwrite; catch it before rendering.
+	const byPath = new Map<string, string>();
+	for (const job of jobs) {
+		const prev = byPath.get(job.target.path);
+		if (prev) {
+			throw new Error(
+				`output collision: "${prev}" and "${job.input.jsonPath}" both write ${job.target.path}; rename or render separately`,
+			);
+		}
+		byPath.set(job.target.path, job.input.jsonPath);
 	}
 
 	if (options.out && jobs.length > 1) {
@@ -321,6 +359,13 @@ function parseBackground(value: string | undefined, format: Format): Rgba {
 	}
 	const color = parseColor(value);
 	if (!color) throw new Error(`unrecognized color "${value}"`);
+	// mp4 is yuv420p with no alpha; a translucent fill would silently composite
+	// onto black. reject it so the user picks an opaque color or uses webm.
+	if (format === "mp4" && color.a < 1) {
+		throw new Error(
+			`mp4 has no alpha channel; --background must be opaque (got "${value}"); use webm for transparency`,
+		);
+	}
 	return color;
 }
 

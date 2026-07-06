@@ -124,24 +124,26 @@ function normalizeAnimations(raw: unknown): AnimationInfo[] {
 	}));
 }
 
-// deep-walk any animation subtree and return the largest value of a "time" key.
-// keyed frames carry a time field (the first at 0 may omit it), so the max time
-// is the animation duration. works across 4.0 and 4.2 timeline shapes.
+// deep-walk any animation subtree and return the largest keyframe time. keyframes
+// are always elements of a timeline array (the first at 0 may omit its time), so
+// the max keyframe time is the animation duration. reading time only from array
+// elements avoids inflation from a stray non-timeline "time" property. works
+// across 4.0 and 4.2 timeline shapes.
 function maxTime(node: unknown): number {
 	let max = 0;
 	if (Array.isArray(node)) {
 		for (const v of node) {
+			if (v && typeof v === "object" && !Array.isArray(v)) {
+				const t = (v as Record<string, unknown>).time;
+				if (typeof t === "number" && t > max) max = t;
+			}
 			const t = maxTime(v);
 			if (t > max) max = t;
 		}
 	} else if (node && typeof node === "object") {
-		for (const [key, value] of Object.entries(node)) {
-			if (key === "time" && typeof value === "number") {
-				if (value > max) max = value;
-			} else {
-				const t = maxTime(value);
-				if (t > max) max = t;
-			}
+		for (const value of Object.values(node)) {
+			const t = maxTime(value);
+			if (t > max) max = t;
 		}
 	}
 	return max;
