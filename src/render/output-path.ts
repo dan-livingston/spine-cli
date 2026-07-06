@@ -28,6 +28,8 @@ export interface OutputContext {
 	animation: string;
 	// include the animation in the name (batch, or >1 animation selected)
 	includeAnimation: boolean;
+	// piece name, appended when rendering a slot subset
+	piece?: string;
 	format: Format;
 	// single explicit --out (a file, or a dir for pngseq); only when one output
 	out?: string;
@@ -40,7 +42,9 @@ export function planOutput(ctx: OutputContext): OutputTarget {
 		return { path: ctx.out, isDir: ctx.format === "pngseq" };
 	}
 	const dir = ctx.outDir ?? dirname(ctx.jsonPath);
-	const base = ctx.includeAnimation ? `${ctx.skeletonName}_${ctx.animation}` : ctx.skeletonName;
+	let base = ctx.skeletonName;
+	if (ctx.includeAnimation) base += `_${ctx.animation}`;
+	if (ctx.piece) base += `_${ctx.piece}`;
 	if (ctx.format === "pngseq") {
 		return { path: join(dir, base), isDir: true };
 	}

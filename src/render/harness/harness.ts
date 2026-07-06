@@ -22,10 +22,18 @@ interface AnimationMeta {
 	duration: number;
 }
 
+interface Box {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 interface SessionMeta {
 	animations: AnimationMeta[];
 	skins: string[];
-	declared: { x: number; y: number; width: number; height: number };
+	slots: string[];
+	declared: Box;
 }
 
 // per-animation render request.
@@ -38,12 +46,41 @@ interface RenderRequest {
 	loops: number;
 	// explicit still times in seconds (for --format png); overrides duration/fps
 	times?: number[];
-	fit: "declared" | "bounds";
+	fit: "declared" | "bounds" | "piece" | "shared";
+	// only draw these slots (a piece); rest are detached before drawing
+	slots?: string[];
+	// explicit framing box (scaled space); overrides fit when set
+	box?: Box;
 	width?: number;
 	height?: number;
 	// clear color, 0..1
 	background: { r: number; g: number; b: number; a: number };
 	premultipliedAlpha: boolean;
+}
+
+// measure the framing boxes a set of pieces occupy over a whole clip. cheap: no
+// pixel readback. node picks one of these per --fit to keep pieces aligned.
+interface MeasureRequest {
+	animation: string;
+	skin?: string;
+	fps: number;
+	duration: number;
+	loops: number;
+	times?: number[];
+	// which framing box node will read; only that one is measured
+	fit: "declared" | "bounds" | "piece" | "shared";
+	// resolved slot names per piece, in the same order as the render jobs
+	pieces: string[][];
+}
+
+interface MeasureResult {
+	// tight box for each piece, union over every frame
+	perPiece: Box[];
+	// union of every selected piece
+	selectedUnion: Box;
+	// union of the whole skeleton (all slots)
+	skeletonUnion: Box;
+	declared: Box;
 }
 
 interface RenderResult {
@@ -128,6 +165,7 @@ async function createSession(config: SessionConfig): Promise<{ id: number; meta:
 	const meta: SessionMeta = {
 		animations: skeletonData.animations.map((a) => ({ name: a.name, duration: a.duration })),
 		skins: skeletonData.skins.map((s) => s.name),
+		slots: skeletonData.slots.map((sl) => sl.name),
 		declared: {
 			x: skeletonData.x,
 			y: skeletonData.y,
@@ -172,7 +210,7 @@ async function renderAnimation(id: number, req: RenderRequest): Promise<RenderRe
 	s.state.apply(s.skeleton);
 	updateWorld(s);
 
-	const box = frameBox(s, req.fit);
+	const box = req.box ?? frameBox(s, req.fit);
 	const size = outputSize(box, req.width, req.height);
 	sizeCanvas(s, size.width, size.height);
 	setCamera(s, box, size.width, size.height);
@@ -188,25 +226,107 @@ async function renderAnimation(id: number, req: RenderRequest): Promise<RenderRe
 		prev = t;
 		s.state.apply(s.skeleton);
 		updateWorld(s);
+		isolate(s, req.slots);
 		frames.push(renderFrame(s, size.width, size.height, req));
 	}
 
 	return { width: size.width, height: size.height, frames };
 }
 
-function frameBox(
-	s: Session,
-	fit: "declared" | "bounds",
-): { x: number; y: number; width: number; height: number } {
-	if (fit === "bounds") {
-		const offset = new s.spine.Vector2();
-		const bsize = new s.spine.Vector2();
-		s.skeleton.getBounds(offset, bsize, []);
-		if (bsize.x > 0 && bsize.y > 0) {
-			return { x: offset.x, y: offset.y, width: bsize.x, height: bsize.y };
+// detach every slot not in the piece so drawSkeleton skips them. attachments are
+// reset from the setup pose each frame, so this reapplies per frame.
+function isolate(s: Session, slots: string[] | undefined): void {
+	if (!slots) return;
+	const keep = new Set(slots);
+	for (const slot of s.skeleton.slots) {
+		if (!keep.has(slot.data.name)) slot.setAttachment(null);
+	}
+}
+
+// walk the clip once, accumulating a per-frame-union framing box for the whole
+// skeleton and for each piece. no rendering; used to pick aligned boxes.
+async function measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult> {
+	const s = sessions.get(id);
+	if (!s) throw new Error(`unknown session ${id}`);
+
+	const anim = s.skeletonData.findAnimation(req.animation);
+	if (!anim) throw new Error(`animation not found: ${req.animation}`);
+
+	applySkin(s, req.skin);
+	const loop = req.times === undefined && (req.loops > 1 || req.duration > anim.duration);
+	const times = req.times ?? frameTimes(anim.duration, req.duration, req.fps, req.loops);
+
+	// measure only the box node's --fit will read: bounds uses the whole-skeleton
+	// union, piece/shared use the per-piece boxes. skip the rest per frame.
+	const needSkeleton = req.fit === "bounds";
+	const needPieces = req.fit === "piece" || req.fit === "shared";
+	const pieceSets = req.pieces.map((names) => new Set(names));
+	const perPiece: (Box | null)[] = req.pieces.map(() => null);
+	let skeletonUnion: Box | null = null;
+
+	s.skeleton.setToSetupPose();
+	s.state.setAnimation(0, req.animation, loop);
+
+	let prev = 0;
+	for (const t of times) {
+		s.skeleton.setToSetupPose();
+		applySkin(s, req.skin);
+		s.state.update(t - prev);
+		prev = t;
+		s.state.apply(s.skeleton);
+		updateWorld(s);
+
+		if (needSkeleton) skeletonUnion = unionBox(skeletonUnion, boundsOf(s));
+
+		if (needPieces) {
+			const slots = s.skeleton.slots;
+			const saved = slots.map((sl) => sl.getAttachment());
+			for (let i = 0; i < pieceSets.length; i++) {
+				const keep = pieceSets[i];
+				for (let j = 0; j < slots.length; j++) {
+					slots[j].setAttachment(keep.has(slots[j].data.name) ? saved[j] : null);
+				}
+				perPiece[i] = unionBox(perPiece[i], boundsOf(s));
+			}
+			for (let j = 0; j < slots.length; j++) slots[j].setAttachment(saved[j]);
 		}
 	}
-	// declared box is stored unscaled; scale it into the scaled-geometry space
+
+	const declared = declaredBox(s);
+	let selectedUnion: Box | null = null;
+	for (const b of perPiece) selectedUnion = unionBox(selectedUnion, b);
+
+	return {
+		perPiece: perPiece.map((b) => b ?? declared),
+		selectedUnion: selectedUnion ?? declared,
+		skeletonUnion: skeletonUnion ?? declared,
+		declared,
+	};
+}
+
+// current getBounds over whatever slots are attached; null if empty.
+function boundsOf(s: Session): Box | null {
+	const offset = new s.spine.Vector2();
+	const size = new s.spine.Vector2();
+	s.skeleton.getBounds(offset, size, []);
+	if (size.x > 0 && size.y > 0) {
+		return { x: offset.x, y: offset.y, width: size.x, height: size.y };
+	}
+	return null;
+}
+
+function unionBox(a: Box | null, b: Box | null): Box | null {
+	if (!b) return a;
+	if (!a) return b;
+	const x0 = Math.min(a.x, b.x);
+	const y0 = Math.min(a.y, b.y);
+	const x1 = Math.max(a.x + a.width, b.x + b.width);
+	const y1 = Math.max(a.y + a.height, b.y + b.height);
+	return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+// declared box stored unscaled; scale into the scaled-geometry space.
+function declaredBox(s: Session): Box {
 	const sd = s.skeletonData;
 	return {
 		x: sd.x * s.scale,
@@ -214,6 +334,14 @@ function frameBox(
 		width: sd.width * s.scale,
 		height: sd.height * s.scale,
 	};
+}
+
+function frameBox(s: Session, fit: RenderRequest["fit"]): Box {
+	if (fit === "bounds") {
+		const bounds = boundsOf(s);
+		if (bounds) return bounds;
+	}
+	return declaredBox(s);
 }
 
 function outputSize(
@@ -341,9 +469,10 @@ declare global {
 		SpineHarness: {
 			createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
 			renderAnimation(id: number, req: RenderRequest): Promise<RenderResult>;
+			measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
 			disposeSession(id: number): void;
 		};
 	}
 }
 
-window.SpineHarness = { createSession, renderAnimation, disposeSession };
+window.SpineHarness = { createSession, renderAnimation, measurePieces, disposeSession };

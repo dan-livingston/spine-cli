@@ -32,7 +32,13 @@ program
 	.option("--scale <f>", "uniform scale (default 1.0)")
 	.option("--width <px>", "output width (overrides scale)")
 	.option("--height <px>", "output height (overrides scale)")
-	.option("--fit <mode>", "declared | bounds (default declared)")
+	.option("--fit <mode>", "declared | bounds | piece | shared (default declared)")
+	.option(
+		"--piece <glob>",
+		"render only these slots as a separate output; repeatable; comma-joins globs",
+		collect,
+		[],
+	)
 	.option("--skin <name>", "skin to apply")
 	.option("--duration <sec>", "clip duration (default animation length)")
 	.option("--loops <n>", "loop the animation n times")
@@ -43,6 +49,12 @@ program
 	.action(run(renderCommand));
 
 program.parseAsync().catch(fail);
+
+// commander collector for repeatable options.
+function collect(value: string, previous: string[]): string[] {
+	previous.push(value);
+	return previous;
+}
 
 // wrap a command action so errors print cleanly and exit non-zero.
 function run<A extends unknown[]>(

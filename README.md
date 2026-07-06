@@ -28,7 +28,8 @@ spine-cli render <skeleton.json | dir | glob>
     --out <path> | --out-dir <dir>
     --fps <n>                                   # default 30
     --scale <f> | --width <px> --height <px>    # default --scale 1.0
-    --fit <declared|bounds>                     # default declared (skeleton width/height)
+    --fit <declared|bounds|piece|shared>        # default declared (skeleton width/height)
+    --piece <glob>                              # render only these slots; repeatable
     --skin <name>
     --duration <sec> --loops <n>
     --frame <t>                                 # single still for --format png
@@ -39,6 +40,25 @@ spine-cli render <skeleton.json | dir | glob>
 Batch writes `{skeleton}_{animation}.{ext}` beside each input or into `--out-dir`.
 
 If a skeleton has more than one animation, `--animation <name|all>` is required (the error lists the names). When a directory holds multiple atlases and none matches the skeleton basename, pass `--atlas`.
+
+## Pieces
+
+Render a subset of a skeleton's slots as its own output. Each `--piece` is one or more comma-joined slot globs (`*`, `?`); a slot joins the piece if any glob matches. `--piece` is repeatable, one output per flag, named `{skeleton}_{animation}_{piece}.{ext}`.
+
+`--fit` controls the framing box, which matters when pieces are meant to stack as layers:
+
+- `piece`: each piece tight to its own bounds. Smallest files; pieces do not align.
+- `shared`: all selected pieces share one box (their combined bounds). Stack the layers and they realign.
+- `bounds`: shared box spanning the whole skeleton (all slots). Same alignment, more margin.
+- `declared`: shared box is the declared artboard.
+
+Boxes are the union across every frame of the clip, so an animated piece keeps a stable size instead of jittering. `piece` and `shared` require at least one `--piece`.
+
+```
+# three stackable layers of one animation, aligned in the artboard
+spine-cli render VaultSetup.json -a State0-OpenIdle --format apng --fit shared \
+    --piece "Redux/VaultDoorIsolated/*" --piece "Chips/*" --piece "images/*"
+```
 
 ## Prerequisites
 

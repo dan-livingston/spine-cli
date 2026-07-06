@@ -23,10 +23,20 @@ export interface AnimationMeta {
 	duration: number;
 }
 
+export interface Box {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export type Fit = "declared" | "bounds" | "piece" | "shared";
+
 export interface SessionMeta {
 	animations: AnimationMeta[];
 	skins: string[];
-	declared: { x: number; y: number; width: number; height: number };
+	slots: string[];
+	declared: Box;
 }
 
 export interface RenderRequest {
@@ -36,11 +46,35 @@ export interface RenderRequest {
 	duration: number;
 	loops: number;
 	times?: number[];
-	fit: "declared" | "bounds";
+	fit: Fit;
+	// only draw these slots (a piece); undefined draws the whole skeleton
+	slots?: string[];
+	// explicit framing box (scaled space); overrides fit when set
+	box?: Box;
 	width?: number;
 	height?: number;
 	background: { r: number; g: number; b: number; a: number };
 	premultipliedAlpha: boolean;
+}
+
+// measure the framing boxes a set of pieces occupy over a whole clip.
+export interface MeasureRequest {
+	animation: string;
+	skin?: string;
+	fps: number;
+	duration: number;
+	loops: number;
+	times?: number[];
+	// which framing box the caller will read; measure only computes that one
+	fit: Fit;
+	pieces: string[][];
+}
+
+export interface MeasureResult {
+	perPiece: Box[];
+	selectedUnion: Box;
+	skeletonUnion: Box;
+	declared: Box;
 }
 
 // a decoded clip: raw rgba frames (top-down), all sized width x height.
@@ -57,6 +91,7 @@ interface HarnessApi {
 		id: number,
 		req: RenderRequest,
 	): Promise<{ width: number; height: number; frames: string[] }>;
+	measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
 	disposeSession(id: number): void;
 }
 type HarnessWindow = typeof globalThis & { SpineHarness: HarnessApi };
@@ -154,6 +189,15 @@ export class RenderWorker {
 		);
 		const frames = res.frames.map((b64) => base64ToBytes(b64));
 		return { width: res.width, height: res.height, frames };
+	}
+
+	async measure(id: number, req: MeasureRequest): Promise<MeasureResult> {
+		return this.guard(() =>
+			this.page.evaluate(
+				(a) => (window as HarnessWindow).SpineHarness.measurePieces(a.id, a.req),
+				{ id, req },
+			),
+		);
 	}
 
 	async dispose(id: number): Promise<void> {

@@ -3,7 +3,14 @@ import { dirname } from "node:path";
 
 import type { Frame } from "../encode/png.ts";
 import type { Format, OutputContext } from "../render/output-path.ts";
-import type { Clip, RenderRequest, SessionMeta } from "../render/renderer.ts";
+import type {
+	Box,
+	Clip,
+	Fit,
+	MeasureRequest,
+	MeasureResult,
+	RenderRequest,
+} from "../render/renderer.ts";
 import type { ResolvedInput } from "../types.ts";
 
 import { encodeApng } from "../encode/apng.ts";
@@ -30,6 +37,7 @@ export interface RenderOptions {
 	loops?: string;
 	frame?: string;
 	background?: string;
+	piece?: string[];
 	concurrency?: string;
 	dryRun?: boolean;
 }
@@ -41,11 +49,20 @@ interface Rgba {
 	a: number;
 }
 
-// a single unit of work: one animation of one skeleton to one output target.
+// one piece of a skeleton: a name (for the filename) and the resolved slots it
+// draws. absent for a whole-skeleton render.
+interface Piece {
+	name: string;
+	slots: string[];
+}
+
+// a single unit of work: one animation of one skeleton (optionally one piece) to
+// one output target.
 interface Job {
 	input: ResolvedInput;
 	animation: string;
 	includeAnimation: boolean;
+	piece?: Piece;
 	target: { path: string; isDir: boolean };
 }
 
@@ -65,8 +82,14 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	const duration = options.duration
 		? parseNumber(options.duration, "duration", 0, { min: 0, exclusiveMin: true })
 		: undefined;
-	const fit = parseFit(options.fit);
+	const pieceSpecs = options.piece ?? [];
+	const fit = parseFit(options.fit, pieceSpecs.length > 0);
 	const background = parseBackground(options.background, format);
+
+	// two --piece specs can normalize to the same filename; catch it up front (the
+	// specs apply to every skeleton) instead of as an opaque output collision that
+	// names the same input twice.
+	assertDistinctPieceNames(pieceSpecs);
 
 	const inputs = await resolveInputs(target, options.atlas, (path, reason) => {
 		console.warn(`skip ${path}: ${reason}`);
@@ -93,25 +116,50 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 			)
 				continue;
 		}
+		// parse the skeleton json once; animation and slot names both come from it
+		const skeleton = readSkeleton(input);
 		let animations: string[];
 		try {
-			animations = selectAnimations(input, options.animation);
+			animations = selectAnimations(input, skeleton.animations, options.animation);
 		} catch (err) {
 			if (skip(input, err instanceof Error ? err.message : String(err))) continue;
 			animations = [];
 		}
+		let pieces: Piece[] | undefined;
+		if (pieceSpecs.length > 0) {
+			try {
+				// a spec that matches no slot on this skeleton drops just that piece in
+				// a batch (keeping the skeleton's other pieces); fatal for a single target.
+				pieces = resolvePieces(input, skeleton.slots, pieceSpecs, (spec) => {
+					// non-batch: throw so the catch's skip() surfaces it fatally (skip
+					// prepends the skeleton name). batch: warn and drop just this piece.
+					if (!batch) throw new Error(`--piece "${spec}" matched no slots`);
+					console.warn(`skip ${input.jsonPath}: --piece "${spec}" matched no slots`);
+				});
+			} catch (err) {
+				if (skip(input, err instanceof Error ? err.message : String(err))) continue;
+				animations = [];
+			}
+			// every spec missed on this skeleton: nothing piece-related to render
+			if (pieces && pieces.length === 0) continue;
+		}
 		const includeAnimation = batch || animations.length > 1;
 		for (const animation of animations) {
-			const ctx: OutputContext = {
-				jsonPath: input.jsonPath,
-				skeletonName: input.skeletonName,
-				animation,
-				includeAnimation,
-				format,
-				out: options.out,
-				outDir: options.outDir,
+			const emit = (piece?: Piece): void => {
+				const ctx: OutputContext = {
+					jsonPath: input.jsonPath,
+					skeletonName: input.skeletonName,
+					animation,
+					includeAnimation,
+					piece: piece?.name,
+					format,
+					out: options.out,
+					outDir: options.outDir,
+				};
+				jobs.push({ input, animation, includeAnimation, piece, target: planOutput(ctx) });
 			};
-			jobs.push({ input, animation, includeAnimation, target: planOutput(ctx) });
+			if (pieces) pieces.forEach((p) => emit(p));
+			else emit();
 		}
 	}
 
@@ -156,7 +204,9 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 
 	const pool = await RenderPool.launch();
 	try {
-		await runJobs(pool, groupByInput(jobs), Math.min(concurrency, inputs.length), {
+		// group jobs by their skeleton so a worker builds each skeleton once.
+		const groups = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
+		await runJobs(pool, groups, Math.min(concurrency, inputs.length), {
 			scale,
 			fps,
 			loops,
@@ -181,7 +231,7 @@ interface RunParams {
 	loops: number;
 	frame: number;
 	duration?: number;
-	fit: "declared" | "bounds";
+	fit: Fit;
 	width?: number;
 	height?: number;
 	skin?: string;
@@ -190,16 +240,15 @@ interface RunParams {
 	ffmpeg: string | null;
 }
 
-// group jobs by their skeleton so a worker builds each skeleton once.
-function groupByInput(jobs: Job[]): Job[][] {
-	const byPath = new Map<string, Job[]>();
-	for (const job of jobs) {
-		const key = job.input.jsonPath;
-		const list = byPath.get(key);
-		if (list) list.push(job);
-		else byPath.set(key, [job]);
+// group items by a key, preserving first-seen order (Map keeps insertion order).
+function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
+	const groups = new Map<K, T[]>();
+	for (const item of items) {
+		const list = groups.get(key(item));
+		if (list) list.push(item);
+		else groups.set(key(item), [item]);
 	}
-	return [...byPath.values()];
+	return groups;
 }
 
 // a small worker pool: each worker owns a page and pulls skeleton groups.
@@ -228,22 +277,72 @@ async function renderGroup(
 	params: RunParams,
 ): Promise<void> {
 	const input = group[0].input;
-	const { id, meta } = await worker.createSession(input, params.scale);
+	const { id } = await worker.createSession(input, params.scale);
 	try {
-		for (const job of group) {
-			const req = buildRequest(job.animation, meta, params);
-			const clip = await worker.render(id, req);
-			await writeClip(job, clip, params);
-			console.log(
-				`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
-			);
+		for (const [animation, jobs] of groupBy(group, (j) => j.animation)) {
+			// pieces of one animation share a measure pass so their boxes align
+			if (jobs[0].piece) {
+				await renderPieces(worker, id, animation, jobs, params);
+			} else {
+				for (const job of jobs) {
+					const clip = await worker.render(id, buildRequest(animation, params));
+					await writeClip(job, clip, params);
+					logWrote(job, clip);
+				}
+			}
 		}
 	} finally {
 		await worker.dispose(id);
 	}
 }
 
-function buildRequest(animation: string, meta: SessionMeta, params: RunParams): RenderRequest {
+// render every piece of one animation, framed by a single measure pass so all
+// pieces stay aligned (or tightly cropped, for --fit piece).
+async function renderPieces(
+	worker: Awaited<ReturnType<RenderPool["worker"]>>,
+	id: number,
+	animation: string,
+	jobs: Job[],
+	params: RunParams,
+): Promise<void> {
+	// --fit declared frames each piece to the artboard, which needs no measure
+	// pass; only bounds/piece/shared walk the clip to find their box.
+	const pieces = jobs.map((j) => piece(j).slots);
+	const boxes =
+		params.fit === "declared"
+			? undefined
+			: await worker.measure(id, buildMeasureReq(animation, pieces, params));
+	for (let i = 0; i < jobs.length; i++) {
+		const job = jobs[i];
+		const req = buildRequest(animation, params);
+		req.slots = piece(job).slots;
+		if (boxes) req.box = pickBox(params.fit, boxes, i);
+		const clip = await worker.render(id, req);
+		await writeClip(job, clip, params);
+		logWrote(job, clip);
+	}
+}
+
+function piece(job: Job): Piece {
+	if (!job.piece) throw new Error(`internal: job for ${job.target.path} has no piece`);
+	return job.piece;
+}
+
+// map the resolved --fit onto one of the measured boxes.
+function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
+	if (fit === "piece") return boxes.perPiece[i];
+	if (fit === "shared") return boxes.selectedUnion;
+	if (fit === "bounds") return boxes.skeletonUnion;
+	return boxes.declared;
+}
+
+function logWrote(job: Job, clip: Clip): void {
+	console.log(
+		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
+	);
+}
+
+function buildRequest(animation: string, params: RunParams): RenderRequest {
 	const base: RenderRequest = {
 		animation,
 		skin: params.skin,
@@ -260,9 +359,21 @@ function buildRequest(animation: string, meta: SessionMeta, params: RunParams): 
 	if (params.format === "png") {
 		base.times = [params.frame];
 	}
-	// silence unused meta until we need per-animation duration reporting
-	void meta;
 	return base;
+}
+
+function buildMeasureReq(animation: string, pieces: string[][], params: RunParams): MeasureRequest {
+	const req: MeasureRequest = {
+		animation,
+		skin: params.skin,
+		fps: params.fps,
+		duration: params.duration ?? 0,
+		loops: params.loops,
+		fit: params.fit,
+		pieces,
+	};
+	if (params.format === "png") req.times = [params.frame];
+	return req;
 }
 
 async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void> {
@@ -289,15 +400,34 @@ function toFrames(clip: Clip): Frame[] {
 	return clip.frames.map((data) => ({ width: clip.width, height: clip.height, data }));
 }
 
-// animation names live in the json; read them without a browser roundtrip so
-// selection and --dry-run work identically.
-function animationNames(input: ResolvedInput): string[] {
-	const data = JSON.parse(input.jsonText) as { animations?: Record<string, unknown> };
-	return Object.keys(data.animations ?? {});
+interface SkeletonInfo {
+	animations: string[];
+	slots: string[];
 }
 
-function selectAnimations(input: ResolvedInput, requested: string | undefined): string[] {
-	const names = animationNames(input);
+// animation and slot names live in the json; read both in one parse without a
+// browser roundtrip so selection, pieces and --dry-run work identically.
+function readSkeleton(input: ResolvedInput): SkeletonInfo {
+	const data = JSON.parse(input.jsonText) as {
+		animations?: Record<string, unknown>;
+		slots?: { name: string }[] | Record<string, unknown>;
+	};
+	const slots = data.slots;
+	return {
+		animations: Object.keys(data.animations ?? {}),
+		slots: Array.isArray(slots)
+			? slots.map((s) => s.name)
+			: slots && typeof slots === "object"
+				? Object.keys(slots)
+				: [],
+	};
+}
+
+function selectAnimations(
+	input: ResolvedInput,
+	names: string[],
+	requested: string | undefined,
+): string[] {
 	if (names.length === 0) throw new Error(`${input.skeletonName}: skeleton has no animations`);
 	if (requested === "all") return names;
 	if (requested) {
@@ -322,12 +452,79 @@ function parseFormat(value: string | undefined): Format {
 	return value;
 }
 
-function parseFit(value: string | undefined): "declared" | "bounds" {
+function parseFit(value: string | undefined, hasPieces: boolean): Fit {
 	if (value === undefined) return "declared";
-	if (value !== "declared" && value !== "bounds") {
-		throw new Error(`unknown fit "${value}"; use declared or bounds`);
+	if (value !== "declared" && value !== "bounds" && value !== "piece" && value !== "shared") {
+		throw new Error(`unknown fit "${value}"; use declared, bounds, piece or shared`);
+	}
+	if ((value === "piece" || value === "shared") && !hasPieces) {
+		throw new Error(`--fit ${value} needs at least one --piece`);
 	}
 	return value;
+}
+
+// a --piece spec is one or more comma-separated globs; a slot joins the piece if
+// any glob matches. each spec becomes one output. specs that match no slot are
+// reported via onNoMatch rather than aborting, so a skeleton's other pieces still
+// render.
+function resolvePieces(
+	input: ResolvedInput,
+	names: string[],
+	specs: string[],
+	onNoMatch: (spec: string) => void,
+): Piece[] {
+	if (names.length === 0) {
+		throw new Error(`${input.skeletonName}: skeleton has no slots to select pieces from`);
+	}
+	const pieces: Piece[] = [];
+	for (const spec of specs) {
+		const globs = spec
+			.split(",")
+			.map((g) => g.trim())
+			.filter(Boolean);
+		if (globs.length === 0) throw new Error(`empty --piece spec`);
+		const patterns = globs.map(globToRegex);
+		const slots = names.filter((n) => patterns.some((re) => re.test(n)));
+		if (slots.length === 0) {
+			onNoMatch(spec);
+			continue;
+		}
+		pieces.push({ name: pieceName(spec), slots });
+	}
+	return pieces;
+}
+
+// glob with * (any run) and ? (one char); slot names are case-sensitive.
+function globToRegex(glob: string): RegExp {
+	const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+	const body = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
+	return new RegExp(`^${body}$`);
+}
+
+// two specs that normalize to the same filename would collide on output; the
+// specs apply to every skeleton, so validate them once up front.
+function assertDistinctPieceNames(specs: string[]): void {
+	const byName = new Map<string, string>();
+	for (const spec of specs) {
+		const name = pieceName(spec);
+		const prev = byName.get(name);
+		if (prev !== undefined) {
+			throw new Error(
+				`--piece "${prev}" and "${spec}" both map to output name "${name}"; rename one`,
+			);
+		}
+		byName.set(name, spec);
+	}
+}
+
+// derive a filename-safe piece name from its spec.
+function pieceName(spec: string): string {
+	const name = spec
+		.replace(/\*/g, "")
+		.replace(/[^A-Za-z0-9._-]+/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "");
+	return name || "piece";
 }
 
 interface NumberBounds {
