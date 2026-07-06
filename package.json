@@ -29,7 +29,8 @@
 		"check": "vp check",
 		"test": "vp test --passWithNoTests",
 		"prepublishOnly": "vp run build",
-		"prepare": "vp config"
+		"prepare": "vp config",
+		"release": "bumpp"
 	},
 	"dependencies": {
 		"commander": "^15.0.0",
@@ -40,6 +41,7 @@
 	"devDependencies": {
 		"@types/node": "^25.6.2",
 		"@types/upng-js": "^2.1.5",
+		"bumpp": "^11.1.0",
 		"esbuild": "^0.25.0",
 		"spine-webgl-40": "npm:@esotericsoftware/spine-webgl@4.0.28",
 		"spine-webgl-42": "npm:@esotericsoftware/spine-webgl@4.2.7",
