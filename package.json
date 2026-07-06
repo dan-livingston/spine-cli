@@ -1,8 +1,12 @@
 {
 	"name": "spine-cli",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "CLI to render exported Spine 2D skeletal assets to images/video and report skeleton info.",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dan-livingston/spine-cli.git"
+	},
 	"bin": {
 		"spine-cli": "./dist/cli.mjs"
 	},
@@ -15,12 +19,16 @@
 		".": "./dist/cli.mjs",
 		"./package.json": "./package.json"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"dev": "vp pack --watch",
 		"build": "vp check && node scripts/build-harness.mjs && vp pack",
 		"build:harness": "node scripts/build-harness.mjs",
 		"check": "vp check",
 		"test": "vp test --passWithNoTests",
+		"prepublishOnly": "vp run build",
 		"prepare": "vp config"
 	},
 	"dependencies": {
