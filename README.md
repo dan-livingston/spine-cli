@@ -16,7 +16,7 @@ Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG texture
 - **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir or glob for batch.
 - **Video** (`mp4`/`webm`): shells out to ffmpeg, optional external binary (detected on PATH). `mp4` defaults white (no alpha); other formats default transparent.
 
-## Usage (planned)
+## Usage
 
 ```
 spine-cli info <skeleton.json> [--atlas <path>] [--json] [--verbose]
@@ -38,12 +38,20 @@ spine-cli render <skeleton.json | dir | glob>
 
 Batch writes `{skeleton}_{animation}.{ext}` beside each input or into `--out-dir`.
 
+If a skeleton has more than one animation, `--animation <name|all>` is required (the error lists the names). When a directory holds multiple atlases and none matches the skeleton basename, pass `--atlas`.
+
+## Prerequisites
+
+- Chrome or Chromium on the system (rendering runs headless via `playwright-core`, launched with `channel: "chrome"`).
+- `ffmpeg` on PATH only for `mp4`/`webm`; the image formats need nothing extra.
+
 ## Scripts
 
-| script         | command           | does                      |
-| -------------- | ----------------- | ------------------------- |
-| `pnpm dev`     | `vp dev`          | dev server                |
-| `pnpm build`   | `tsc && vp build` | production build          |
-| `pnpm preview` | `vp preview`      | preview build             |
-| `vp check`     |                   | format + lint + typecheck |
-| `vp fmt`       |                   | format                    |
+| script               | command                        | does                       |
+| -------------------- | ------------------------------ | -------------------------- |
+| `pnpm build`         | `build-harness.mjs && vp pack` | build harness bundle + cli |
+| `pnpm build:harness` | `build-harness.mjs`            | rebuild the browser bundle |
+| `pnpm dev`           | `vp pack --watch`              | rebuild the cli on change  |
+| `pnpm check`         | `vp check`                     | format + lint + typecheck  |
+
+The browser render harness (`spine-ts` 4.0 + 4.2) bundles to `dist-harness/harness.js` via esbuild; rerun `pnpm build:harness` after editing `src/render/harness/`.

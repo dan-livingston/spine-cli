@@ -1,15 +1,40 @@
 {
 	"name": "spine-cli",
 	"version": "0.0.0",
-	"private": true,
+	"description": "CLI to render exported Spine 2D skeletal assets to images/video and report skeleton info.",
+	"license": "MIT",
+	"bin": {
+		"spine-cli": "./dist/cli.mjs"
+	},
+	"files": [
+		"dist",
+		"dist-harness"
+	],
 	"type": "module",
+	"exports": {
+		".": "./dist/cli.mjs",
+		"./package.json": "./package.json"
+	},
 	"scripts": {
-		"dev": "vp dev",
-		"build": "tsc && vp build",
-		"preview": "vp preview",
+		"dev": "vp pack --watch",
+		"build": "node scripts/build-harness.mjs && vp pack",
+		"build:harness": "node scripts/build-harness.mjs",
+		"check": "vp check",
+		"test": "vp test",
 		"prepare": "vp config"
 	},
+	"dependencies": {
+		"commander": "^15.0.0",
+		"gifenc": "^1.0.3",
+		"playwright-core": "^1.61.1",
+		"upng-js": "^2.1.0"
+	},
 	"devDependencies": {
+		"@types/node": "^25.6.2",
+		"@types/upng-js": "^2.1.5",
+		"esbuild": "^0.25.0",
+		"spine-webgl-40": "npm:@esotericsoftware/spine-webgl@4.0.28",
+		"spine-webgl-42": "npm:@esotericsoftware/spine-webgl@4.2.7",
 		"typescript": "~6.0.2",
 		"vite": "catalog:",
 		"vite-plus": "catalog:"

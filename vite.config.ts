@@ -4,6 +4,17 @@ export default defineConfig({
 	staged: {
 		"*": "vp check --fix",
 	},
+	pack: {
+		// a cli bin, not a consumed library, so no .d.ts generation
+		entry: ["src/cli.ts"],
+		exports: true,
+	},
+	lint: {
+		options: {
+			typeAware: true,
+			typeCheck: true,
+		},
+	},
 	fmt: {
 		tabWidth: 4,
 		useTabs: true,
@@ -20,9 +31,7 @@ export default defineConfig({
 			],
 		},
 	},
-	lint: {
-		jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
-		rules: { "vite-plus/prefer-vite-plus-imports": "error" },
-		options: { typeAware: true, typeCheck: true },
+	test: {
+		include: ["src/**/*.test.ts"],
 	},
 });
