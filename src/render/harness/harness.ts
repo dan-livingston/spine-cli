@@ -55,7 +55,8 @@ interface RenderRequest {
 	height?: number;
 	// clear color, 0..1
 	background: { r: number; g: number; b: number; a: number };
-	premultipliedAlpha: boolean;
+	// override the atlas pma flag; omit to auto-detect from the atlas
+	premultipliedAlpha?: boolean;
 }
 
 // measure the framing boxes a set of pieces occupy over a whole clip. cheap: no
@@ -101,6 +102,9 @@ interface Session {
 	stateData: spine42.AnimationStateData;
 	// json scale applied to geometry; declared box is stored unscaled
 	scale: number;
+	// true only if every atlas page is premultiplied (pma flag). straight-alpha
+	// atlases must render straight or additive slots blow out into boxes.
+	premultipliedAlpha: boolean;
 }
 
 const sessions = new Map<number, Session>();
@@ -141,6 +145,10 @@ async function createSession(config: SessionConfig): Promise<{ id: number; meta:
 		page.setTexture(new spine.GLTexture(gl, image));
 	}
 
+	// an atlas without a pma flag on every page is straight alpha; render it that
+	// way. no pages would default true, so guard the empty case.
+	const premultipliedAlpha = atlas.pages.length > 0 && atlas.pages.every((p) => p.pma);
+
 	const attachmentLoader = new spine.AtlasAttachmentLoader(atlas);
 	const json = new spine.SkeletonJson(attachmentLoader);
 	json.scale = config.scale;
@@ -160,6 +168,7 @@ async function createSession(config: SessionConfig): Promise<{ id: number; meta:
 		state,
 		stateData,
 		scale: config.scale,
+		premultipliedAlpha,
 	});
 
 	const meta: SessionMeta = {
@@ -196,6 +205,9 @@ async function renderAnimation(id: number, req: RenderRequest): Promise<RenderRe
 
 	const anim = s.skeletonData.findAnimation(req.animation);
 	if (!anim) throw new Error(`animation not found: ${req.animation}`);
+
+	// default the pma flag to the atlas; an explicit request value overrides.
+	req.premultipliedAlpha = req.premultipliedAlpha ?? s.premultipliedAlpha;
 
 	applySkin(s, req.skin);
 

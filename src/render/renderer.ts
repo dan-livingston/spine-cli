@@ -54,7 +54,9 @@ export interface RenderRequest {
 	width?: number;
 	height?: number;
 	background: { r: number; g: number; b: number; a: number };
-	premultipliedAlpha: boolean;
+	// override the atlas pma flag; omit to auto-detect from the atlas (straight vs
+	// premultiplied). rendering straight textures as premultiplied boxes additive slots.
+	premultipliedAlpha?: boolean;
 }
 
 // measure the framing boxes a set of pieces occupy over a whole clip.
