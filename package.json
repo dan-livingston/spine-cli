@@ -1,6 +1,6 @@
 {
 	"name": "spine-cli",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "CLI to render exported Spine 2D skeletal assets to images/video and report skeleton info.",
 	"license": "MIT",
 	"repository": {
