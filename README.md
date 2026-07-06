@@ -6,7 +6,7 @@ CLI for exported [Spine](https://esotericsoftware.com/) 2D skeletal assets. Rend
 
 Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG textures).
 
-- **`render`**: rasterize an animation to `pngseq` (default), `png` (single frame), `gif`, `mp4`, `webm`, `apng`.
+- **`render`**: rasterize an animation to `pngseq` (default), `png` (single frame), `gif`, `mp4`, `webm`, `webp`, `apng`.
 - **`info`**: Spine version, animations + durations, skins, bone/slot/attachment/constraint counts, mesh/clipping flags, atlas pages/resolution + missing-texture check.
 
 ## How it works
@@ -14,7 +14,7 @@ Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG texture
 - **Rendering**: `spine-ts` WebGL backend in headless Chromium (Playwright), screenshotting frames. WebGL for full mesh + clipping fidelity (both common in targets).
 - **Version dispatch**: bundles `spine-ts` 4.0 + 4.2, picks per-skeleton from embedded `"spine"` field (format broke at 4.1; targets straddle it).
 - **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir or glob for batch.
-- **Video** (`mp4`/`webm`): shells out to ffmpeg, optional external binary (detected on PATH). `mp4` defaults white (no alpha); other formats default transparent.
+- **Video** (`mp4`/`webm`/`webp`): shells out to ffmpeg, optional external binary (detected on PATH). `mp4` defaults white (no alpha); other formats default transparent. Animated `webp` is lossless with full alpha by default (libwebp); pass `--quality 0-100` for a smaller lossy file.
 
 ## Usage
 
@@ -24,7 +24,7 @@ spine-cli info <skeleton.json> [--atlas <path>] [--json] [--verbose]
 spine-cli render <skeleton.json | dir | glob>
     [--atlas <path>]
     --animation <name|all>                     # error+lists names if multiple and omitted
-    --format <pngseq|png|gif|mp4|webm|apng>     # default pngseq
+    --format <pngseq|png|gif|mp4|webm|webp|apng> # default pngseq
     --out <path> | --out-dir <dir>
     --fps <n>                                   # default 30
     --scale <f> | --width <px> --height <px>    # default --scale 1.0
@@ -34,6 +34,7 @@ spine-cli render <skeleton.json | dir | glob>
     --duration <sec> --loops <n>
     --frame <t>                                 # single still for --format png
     --background <color|transparent>            # default transparent; white for mp4
+    --quality <0-100>                           # webp lossy quality; omit for lossless
     --concurrency <n> --dry-run
 ```
 
@@ -63,7 +64,7 @@ spine-cli render VaultSetup.json -a State0-OpenIdle --format apng --fit shared \
 ## Prerequisites
 
 - Chrome or Chromium on the system (rendering runs headless via `playwright-core`, launched with `channel: "chrome"`).
-- `ffmpeg` on PATH only for `mp4`/`webm`; the image formats need nothing extra.
+- `ffmpeg` on PATH only for `mp4`/`webm`/`webp`; the other image formats (`pngseq`, `png`, `gif`, `apng`) need nothing extra.
 
 ## Scripts
 

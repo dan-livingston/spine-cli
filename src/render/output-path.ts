@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 
-export type Format = "pngseq" | "png" | "gif" | "apng" | "mp4" | "webm";
+export type Format = "pngseq" | "png" | "gif" | "apng" | "mp4" | "webm" | "webp";
 
 const EXT: Record<Exclude<Format, "pngseq">, string> = {
 	png: ".png",
@@ -8,11 +8,18 @@ const EXT: Record<Exclude<Format, "pngseq">, string> = {
 	gif: ".gif",
 	mp4: ".mp4",
 	webm: ".webm",
+	webp: ".webp",
 };
 
 export function isFormat(v: string): v is Format {
 	return (
-		v === "pngseq" || v === "png" || v === "gif" || v === "apng" || v === "mp4" || v === "webm"
+		v === "pngseq" ||
+		v === "png" ||
+		v === "gif" ||
+		v === "apng" ||
+		v === "mp4" ||
+		v === "webm" ||
+		v === "webp"
 	);
 }
 

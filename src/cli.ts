@@ -25,7 +25,10 @@ program
 	.description("Render an animation to images or video (file, directory, or glob)")
 	.option("--atlas <path>", "atlas file (auto-resolved beside the skeleton by default)")
 	.option("-a, --animation <name>", "animation name, or 'all' (required if skeleton has >1)")
-	.option("-f, --format <format>", "pngseq | png | gif | mp4 | webm | apng (default pngseq)")
+	.option(
+		"-f, --format <format>",
+		"pngseq | png | gif | mp4 | webm | webp | apng (default pngseq)",
+	)
 	.option("-o, --out <path>", "output file (single input)")
 	.option("--out-dir <dir>", "output directory (batch or explicit dir)")
 	.option("--fps <n>", "frames per second (default 30)")
@@ -44,6 +47,7 @@ program
 	.option("--loops <n>", "loop the animation n times")
 	.option("--frame <t>", "single still at time t seconds (for --format png)")
 	.option("--background <color>", "css color or 'transparent' (default transparent)")
+	.option("--quality <n>", "webp lossy quality 0-100 (omit for lossless)")
 	.option("--concurrency <n>", "parallel skeletons in batch (default 1)")
 	.option("--dry-run", "list what would be written without rendering")
 	.action(run(renderCommand));

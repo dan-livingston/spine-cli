@@ -37,6 +37,7 @@ export interface RenderOptions {
 	loops?: string;
 	frame?: string;
 	background?: string;
+	quality?: string;
 	piece?: string[];
 	concurrency?: string;
 	dryRun?: boolean;
@@ -85,6 +86,7 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	const pieceSpecs = options.piece ?? [];
 	const fit = parseFit(options.fit, pieceSpecs.length > 0);
 	const background = parseBackground(options.background, format);
+	const quality = parseQuality(options.quality, format);
 
 	// two --piece specs can normalize to the same filename; catch it up front (the
 	// specs apply to every skeleton) instead of as an opaque output collision that
@@ -191,9 +193,9 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 		return;
 	}
 
-	// video needs a real ffmpeg; fail early with a clear message before launching.
+	// mp4/webm/webp need a real ffmpeg; fail early with a clear message before launching.
 	let ffmpeg: string | null = null;
-	if (format === "mp4" || format === "webm") {
+	if (format === "mp4" || format === "webm" || format === "webp") {
 		ffmpeg = await findFfmpeg();
 		if (!ffmpeg) {
 			throw new Error(
@@ -218,6 +220,7 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 			skin: options.skin,
 			background,
 			format,
+			quality,
 			ffmpeg,
 		});
 	} finally {
@@ -237,6 +240,8 @@ interface RunParams {
 	skin?: string;
 	background: Rgba;
 	format: Format;
+	// webp only: 0-100 lossy quality; undefined means lossless.
+	quality?: number;
 	ffmpeg: string | null;
 }
 
@@ -390,9 +395,16 @@ async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void>
 		await writeFile(job.target.path, encodeApng(frames, params.fps));
 	} else if (params.format === "gif") {
 		await writeFile(job.target.path, encodeGif(frames, params.fps));
-	} else if (params.format === "mp4" || params.format === "webm") {
+	} else if (params.format === "mp4" || params.format === "webm" || params.format === "webp") {
 		if (!params.ffmpeg) throw new Error("ffmpeg unavailable");
-		await encodeVideo(params.ffmpeg, job.target.path, frames, params.fps, params.format);
+		await encodeVideo(
+			params.ffmpeg,
+			job.target.path,
+			frames,
+			params.fps,
+			params.format,
+			params.quality,
+		);
 	}
 }
 
@@ -447,7 +459,7 @@ function selectAnimations(
 function parseFormat(value: string | undefined): Format {
 	if (value === undefined) return "pngseq";
 	if (!isFormat(value)) {
-		throw new Error(`unknown format "${value}"; use pngseq, png, gif, apng, mp4 or webm`);
+		throw new Error(`unknown format "${value}"; use pngseq, png, gif, apng, mp4, webm or webp`);
 	}
 	return value;
 }
@@ -530,6 +542,7 @@ function pieceName(spec: string): string {
 interface NumberBounds {
 	min?: number;
 	exclusiveMin?: boolean;
+	max?: number;
 }
 
 function parseNumber(
@@ -546,7 +559,20 @@ function parseNumber(
 			throw new Error(`--${name} must be ${bounds.exclusiveMin ? ">" : ">="} ${bounds.min}`);
 		}
 	}
+	if (bounds.max !== undefined && n > bounds.max) {
+		throw new Error(`--${name} must be <= ${bounds.max}`);
+	}
 	return n;
+}
+
+// webp only: 0-100 lossy quality. undefined (flag omitted) means lossless. reject
+// it on other formats so it never silently no-ops.
+function parseQuality(value: string | undefined, format: Format): number | undefined {
+	if (value === undefined) return undefined;
+	if (format !== "webp") {
+		throw new Error(`--quality only applies to webp; ${format} has no lossy quality knob`);
+	}
+	return Math.round(parseNumber(value, "quality", 0, { min: 0, max: 100 }));
 }
 
 // default transparent, except mp4 which has no alpha and defaults to white.
