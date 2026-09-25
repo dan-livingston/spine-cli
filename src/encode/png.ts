@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import UPNG from "upng-js";
+
+import type { Files } from "#/ports/files.ts";
 
 export const LOSSLESS_RGBA = 0;
 
@@ -15,11 +16,11 @@ export function encodePng(frame: Frame): Uint8Array {
 	return new Uint8Array(out);
 }
 
-export async function writePngSequence(dir: string, frames: Frame[]): Promise<void> {
-	await mkdir(dir, { recursive: true });
+export async function writePngSequence(files: Files, dir: string, frames: Frame[]): Promise<void> {
+	await files.makeDir(dir);
 	await Promise.all(
 		frames.map((frame, i) =>
-			writeFile(join(dir, sequenceFileName(i, frames.length)), encodePng(frame)),
+			files.write(join(dir, sequenceFileName(i, frames.length)), encodePng(frame)),
 		),
 	);
 }

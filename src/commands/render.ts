@@ -1,20 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
-import type { Frame } from "#/encode/png.ts";
+import type { Env, Io } from "#/ports/env.ts";
+import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
 import type { MeasureResult } from "#/render/harness/contract.ts";
 import type { RenderOptions } from "#/render/options.ts";
 import type { Piece } from "#/render/pieces.ts";
 import type { Job } from "#/render/plan.ts";
-import type { Clip, RenderWorker } from "#/render/renderer.ts";
 import type { RunParams } from "#/render/requests.ts";
 
-import { encodeApng } from "#/encode/apng.ts";
 import { findExternalEncoders } from "#/encode/external.ts";
-import { encodeGif } from "#/encode/gif.ts";
-import { encodePng, writePngSequence } from "#/encode/png.ts";
-import { encodeVideo } from "#/encode/video.ts";
-import { encodeWebp } from "#/encode/webp.ts";
 import { resolveInputs } from "#/input/resolve.ts";
 import {
 	parseBackground,
@@ -25,10 +17,15 @@ import {
 } from "#/render/options.ts";
 import { assertDistinctPieceNames } from "#/render/pieces.ts";
 import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
-import { RenderPool } from "#/render/renderer.ts";
 import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
+import { sessionConfig } from "#/render/session-config.ts";
+import { writeClip } from "#/render/write-clip.ts";
 
-export async function renderCommand(target: string, options: RenderOptions): Promise<void> {
+export async function renderCommand(
+	env: Env,
+	target: string,
+	options: RenderOptions,
+): Promise<void> {
 	const format = parseFormat(options.format);
 	const fps = parseNumber(options.fps, "fps", 30, { min: 1 });
 	const scale = parseNumber(options.scale, "scale", 1, { min: 0, exclusiveMin: true });
@@ -51,7 +48,7 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 
 	assertDistinctPieceNames(pieceSpecs);
 
-	const inputs = await resolveInputs(target, options.atlas, (path, reason) => {
+	const inputs = await resolveInputs(env.files, target, options.atlas, (path, reason) => {
 		console.warn(`skip ${path}: ${reason}`);
 	});
 
@@ -76,11 +73,11 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 		return;
 	}
 
-	const encoders = await findExternalEncoders(format);
-	const pool = await RenderPool.launch();
+	const encoders = await findExternalEncoders(env.processes, format);
+	const pool = await env.launchRenderPool();
 	try {
 		const jobsBySkeleton = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
-		await runJobs(pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
+		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
 			scale,
 			fps,
 			loops,
@@ -117,6 +114,7 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 }
 
 async function runJobs(
+	env: Env,
 	pool: RenderPool,
 	groups: Job[][],
 	workers: number,
@@ -128,24 +126,29 @@ async function runJobs(
 	const run = async (): Promise<void> => {
 		const worker = await pool.worker();
 		for (let group = take(); group; group = take()) {
-			await renderGroup(worker, group, params);
+			await renderGroup(env, worker, group, params);
 		}
 	};
 
 	await Promise.all(Array.from({ length: Math.max(1, workers) }, run));
 }
 
-async function renderGroup(worker: RenderWorker, group: Job[], params: RunParams): Promise<void> {
+async function renderGroup(
+	env: Env,
+	worker: RenderWorker,
+	group: Job[],
+	params: RunParams,
+): Promise<void> {
 	const input = group[0].input;
-	const { id } = await worker.createSession(input, params.scale);
+	const { id } = await worker.createSession(await sessionConfig(env.files, input, params.scale));
 	try {
 		for (const [animation, jobs] of groupBy(group, (j) => j.animation)) {
 			if (jobs[0].piece) {
-				await renderAlignedPieces(worker, id, animation, jobs, params);
+				await renderAlignedPieces(env, worker, id, animation, jobs, params);
 			} else {
 				for (const job of jobs) {
 					const clip = await worker.render(id, buildRequest(animation, params));
-					await writeClip(job, clip, params);
+					await writeClip(env, job, clip, params);
 					logWrote(job, clip);
 				}
 			}
@@ -156,6 +159,7 @@ async function renderGroup(worker: RenderWorker, group: Job[], params: RunParams
 }
 
 async function renderAlignedPieces(
+	io: Io,
 	worker: RenderWorker,
 	id: number,
 	animation: string,
@@ -169,7 +173,7 @@ async function renderAlignedPieces(
 		req.slots = piece(job).slots;
 		if (boxes) req.box = pickBox(params.fit, boxes, i);
 		const clip = await worker.render(id, req);
-		await writeClip(job, clip, params);
+		await writeClip(io, job, clip, params);
 		logWrote(job, clip);
 	}
 }
@@ -195,31 +199,4 @@ function logWrote(job: Job, clip: Clip): void {
 	console.log(
 		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
 	);
-}
-
-async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void> {
-	const frames = toFrames(clip);
-	if (params.format === "pngseq") {
-		await writePngSequence(job.target.path, frames);
-		return;
-	}
-
-	await mkdir(dirname(job.target.path), { recursive: true });
-	if (params.format === "png") {
-		await writeFile(job.target.path, encodePng(frames[0]));
-	} else if (params.format === "apng") {
-		await writeFile(job.target.path, encodeApng(frames, params.fps));
-	} else if (params.format === "gif") {
-		await writeFile(job.target.path, encodeGif(frames, params.fps));
-	} else if (params.format === "mp4" || params.format === "webm") {
-		if (!params.ffmpeg) throw new Error("ffmpeg unavailable");
-		await encodeVideo(params.ffmpeg, job.target.path, frames, params.fps, params.format);
-	} else if (params.format === "webp") {
-		if (!params.img2webp) throw new Error("img2webp unavailable");
-		await encodeWebp(params.img2webp, job.target.path, frames, params.fps, params.lossyQuality);
-	}
-}
-
-function toFrames(clip: Clip): Frame[] {
-	return clip.frames.map((data) => ({ width: clip.width, height: clip.height, data }));
 }

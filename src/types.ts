@@ -1,12 +1,15 @@
 export type SpineMajor = "4.0" | "4.2";
 
-export interface AtlasPage {
+export interface AtlasPageLayout {
 	name: string;
 	width: number;
 	height: number;
 	texturePath: string;
-	textureExists: boolean;
 	regions: string[];
+}
+
+export interface AtlasPage extends AtlasPageLayout {
+	textureExists: boolean;
 }
 
 export interface ParsedAtlas {

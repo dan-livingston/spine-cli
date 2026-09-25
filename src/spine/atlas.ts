@@ -1,35 +1,26 @@
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { AtlasPage, ParsedAtlas } from "#/types.ts";
+import type { AtlasPageLayout } from "#/types.ts";
 
 interface Cursor {
 	lines: string[];
 	at: number;
 }
 
-export function parseAtlas(atlasText: string, atlasDir: string): ParsedAtlas {
+export function parseAtlas(atlasText: string, atlasDir: string): AtlasPageLayout[] {
 	const cursor: Cursor = { lines: atlasText.split(/\r\n|\r|\n/), at: 0 };
-	const pages: AtlasPage[] = [];
+	const pages: AtlasPageLayout[] = [];
 	while (skipBlankLines(cursor)) {
 		pages.push(readPage(cursor, atlasDir));
 	}
-	return { pages };
+	return pages;
 }
 
-function readPage(cursor: Cursor, atlasDir: string): AtlasPage {
+function readPage(cursor: Cursor, atlasDir: string): AtlasPageLayout {
 	const name = nextLine(cursor);
 	const { width, height } = pageSize(readAttributes(cursor));
 	const regions = readRegionNames(cursor);
-	const texturePath = resolve(atlasDir, name);
-	return {
-		name,
-		width,
-		height,
-		texturePath,
-		textureExists: existsSync(texturePath),
-		regions,
-	};
+	return { name, width, height, texturePath: resolve(atlasDir, name), regions };
 }
 
 function readRegionNames(cursor: Cursor): string[] {

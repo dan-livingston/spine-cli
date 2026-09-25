@@ -1,3 +1,4 @@
+import type { Files } from "#/ports/files.ts";
 import type { AnimationInfo } from "#/spine/skeleton-info.ts";
 import type { ResolvedInput } from "#/types.ts";
 
@@ -10,8 +11,12 @@ export interface InfoOptions {
 	verbose?: boolean;
 }
 
-export async function infoCommand(skeleton: string, options: InfoOptions): Promise<void> {
-	const input = await resolveInput(skeleton, options.atlas);
+export async function infoCommand(
+	files: Files,
+	skeleton: string,
+	options: InfoOptions,
+): Promise<void> {
+	const input = await resolveInput(files, skeleton, options.atlas);
 	const info = parseSkeletonInfo(input.jsonText);
 
 	if (options.json) {

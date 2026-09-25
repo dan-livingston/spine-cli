@@ -1,9 +1,20 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 
+import type { Env } from "#/ports/env.ts";
+
+import { nodeFiles } from "#/adapters/files.ts";
+import { launchPlaywrightPool } from "#/adapters/playwright.ts";
+import { nodeProcesses } from "#/adapters/processes.ts";
 import { infoCommand } from "#/commands/info.ts";
 import { renderCommand } from "#/commands/render.ts";
 import pkg from "#package.json" with { type: "json" };
+
+const env: Env = {
+	files: nodeFiles,
+	processes: nodeProcesses,
+	launchRenderPool: launchPlaywrightPool,
+};
 
 const program = new Command();
 
@@ -18,7 +29,7 @@ program
 	.option("--atlas <path>", "atlas file (auto-resolved beside the skeleton by default)")
 	.option("--json", "output as JSON")
 	.option("--verbose", "include per-animation and per-atlas-page detail")
-	.action(exitOnError(infoCommand));
+	.action(exitOnError((skeleton, options) => infoCommand(env.files, skeleton, options)));
 
 program
 	.command("render <target>")
@@ -50,7 +61,7 @@ program
 	.option("--quality <n>", "webp lossy quality 0-100 (omit for lossless)")
 	.option("--concurrency <n>", "parallel skeletons in batch (default 1)")
 	.option("--dry-run", "list what would be written without rendering")
-	.action(exitOnError(renderCommand));
+	.action(exitOnError((target, options) => renderCommand(env, target, options)));
 
 program.parseAsync().catch(fail);
 

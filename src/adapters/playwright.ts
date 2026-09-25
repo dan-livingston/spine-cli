@@ -1,10 +1,11 @@
 import type { Browser, Page } from "playwright-core";
 
-import { access } from "node:fs/promises";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromium } from "playwright-core";
 
+import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
 import type {
 	HarnessApi,
 	MeasureRequest,
@@ -13,17 +14,42 @@ import type {
 	SessionConfig,
 	SessionMeta,
 } from "#/render/harness/contract.ts";
-import type { AtlasPage, ResolvedInput } from "#/types.ts";
-
-import { launchBrowser } from "#/render/browser.ts";
-
-export interface Clip {
-	width: number;
-	height: number;
-	frames: Uint8Array[];
-}
 
 type HarnessWindow = typeof globalThis & { SpineHarness: HarnessApi };
+
+const SOFTWARE_WEBGL_ARGS = [
+	"--use-gl=angle",
+	"--use-angle=swiftshader",
+	"--disable-gpu-sandbox",
+	"--no-sandbox",
+];
+
+const LINUX_SYSTEM_CHROME = "/usr/bin/google-chrome";
+
+export async function launchPlaywrightPool(): Promise<RenderPool> {
+	const harnessPath = await findHarnessInAncestorDirs();
+	const harnessJs = await readFile(harnessPath, "utf8");
+	const browser = await launchBrowser();
+	return new PlaywrightPool(browser, harnessJs);
+}
+
+async function launchBrowser(): Promise<Browser> {
+	const args = SOFTWARE_WEBGL_ARGS;
+	const systemChromeChannel = () => chromium.launch({ headless: true, channel: "chrome", args });
+	const playwrightBundledChromium = () => chromium.launch({ headless: true, args });
+	const linuxSystemChrome = () =>
+		chromium.launch({ headless: true, executablePath: LINUX_SYSTEM_CHROME, args });
+	let lastErr: unknown;
+	for (const attempt of [systemChromeChannel, playwrightBundledChromium, linuxSystemChrome]) {
+		try {
+			return await attempt();
+		} catch (err) {
+			lastErr = err;
+		}
+	}
+	const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+	throw new Error(`could not launch a browser for rendering: ${reason}`);
+}
 
 async function findHarnessInAncestorDirs(): Promise<string> {
 	let dir = dirname(fileURLToPath(import.meta.url));
@@ -47,20 +73,13 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
-export class RenderPool {
+class PlaywrightPool implements RenderPool {
 	private readonly browser: Browser;
 	private readonly harnessJs: string;
 
-	private constructor(browser: Browser, harnessJs: string) {
+	constructor(browser: Browser, harnessJs: string) {
 		this.browser = browser;
 		this.harnessJs = harnessJs;
-	}
-
-	static async launch(): Promise<RenderPool> {
-		const harnessPath = await findHarnessInAncestorDirs();
-		const harnessJs = await readFile(harnessPath, "utf8");
-		const browser = await launchBrowser();
-		return new RenderPool(browser, harnessJs);
 	}
 
 	async worker(): Promise<RenderWorker> {
@@ -73,7 +92,7 @@ export class RenderPool {
 				throw new Error("harness did not attach window.SpineHarness");
 			}
 		});
-		return new RenderWorker(page, errors);
+		return new PlaywrightWorker(page, errors);
 	}
 
 	async close(): Promise<void> {
@@ -81,7 +100,7 @@ export class RenderPool {
 	}
 }
 
-export class RenderWorker {
+class PlaywrightWorker implements RenderWorker {
 	private readonly page: Page;
 	private readonly errors: string[];
 
@@ -90,11 +109,7 @@ export class RenderWorker {
 		this.errors = errors;
 	}
 
-	async createSession(
-		input: ResolvedInput,
-		scale: number,
-	): Promise<{ id: number; meta: SessionMeta }> {
-		const config = await sessionConfig(input, scale);
+	async createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }> {
 		return this.withPageErrors(() =>
 			this.page.evaluate(
 				(cfg) => (window as HarnessWindow).SpineHarness.createSession(cfg),
@@ -139,35 +154,6 @@ export class RenderWorker {
 			throw new Error(base + extra);
 		}
 	}
-}
-
-async function sessionConfig(input: ResolvedInput, scale: number): Promise<SessionConfig> {
-	const pages: SessionConfig["pages"] = [];
-	for (const page of input.atlas.pages) {
-		pages.push({ name: page.name, dataUrl: await textureDataUrl(page) });
-	}
-	return {
-		major: input.major,
-		jsonText: input.jsonText,
-		atlasText: input.atlasText,
-		pages,
-		scale,
-	};
-}
-
-async function textureDataUrl(page: AtlasPage): Promise<string> {
-	if (!page.textureExists) {
-		throw new Error(`atlas texture missing on disk: ${page.texturePath}`);
-	}
-	const bytes = await readFile(page.texturePath);
-	return `data:${mime(page.name)};base64,${bytes.toString("base64")}`;
-}
-
-function mime(name: string): string {
-	const lower = name.toLowerCase();
-	if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-	if (lower.endsWith(".webp")) return "image/webp";
-	return "image/png";
 }
 
 function base64ToBytes(b64: string): Uint8Array {

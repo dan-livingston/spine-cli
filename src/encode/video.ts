@@ -1,20 +1,10 @@
-import { spawn } from "node:child_process";
-
 import type { Frame } from "#/encode/png.ts";
+import type { Processes } from "#/ports/processes.ts";
 
 export type VideoFormat = "mp4" | "webm";
 
-export async function findFfmpeg(): Promise<string | null> {
-	const ok = await probe("ffmpeg");
-	return ok ? "ffmpeg" : null;
-}
-
-function probe(bin: string): Promise<boolean> {
-	return new Promise((resolve) => {
-		const child = spawn(bin, ["-version"], { stdio: "ignore" });
-		child.on("error", () => resolve(false));
-		child.on("close", (code) => resolve(code === 0));
-	});
+export async function findFfmpeg(processes: Processes): Promise<string | null> {
+	return (await processes.answersVersion("ffmpeg")) ? "ffmpeg" : null;
 }
 
 const PAD_TO_EVEN_SIZE = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
@@ -25,6 +15,7 @@ const CODEC_ARGS: Record<VideoFormat, string[]> = {
 };
 
 export async function encodeVideo(
+	processes: Processes,
 	ffmpeg: string,
 	out: string,
 	frames: Frame[],
@@ -52,26 +43,9 @@ export async function encodeVideo(
 		out,
 	];
 
-	await new Promise<void>((resolve, reject) => {
-		const child = spawn(ffmpeg, args, { stdio: ["pipe", "ignore", "pipe"] });
-		let stderr = "";
-		child.stderr.on("data", (d) => {
-			stderr += String(d);
-		});
-		child.on("error", reject);
-		child.on("close", (code) => {
-			if (code === 0) resolve();
-			else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-500)}`));
-		});
-		void pipeFrames(child.stdin, frames).catch(reject);
-	});
-}
-
-async function pipeFrames(stdin: NodeJS.WritableStream, frames: Frame[]): Promise<void> {
-	for (const frame of frames) {
-		if (!stdin.write(frame.data)) {
-			await new Promise<void>((resolve) => stdin.once("drain", resolve));
-		}
-	}
-	stdin.end();
+	await processes.run(
+		ffmpeg,
+		args,
+		frames.map((frame) => frame.data),
+	);
 }

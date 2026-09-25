@@ -2,7 +2,7 @@ import type { DummyRuleMap } from "vite-plus/lint";
 
 import { defineConfig } from "vite-plus";
 
-import { IMPORTS } from "./lint/imports.ts";
+import { ADAPTER_FILES, COMPOSITION_ROOT_FILES, GLOBALS, IMPORTS } from "./lint/imports.ts";
 
 function maxLines(max: number): DummyRuleMap["max-lines"] {
 	return ["error", { max, skipBlankLines: false, skipComments: false }];
@@ -30,11 +30,26 @@ export default defineConfig({
 			"no-restricted-imports": IMPORTS.production,
 			"spine-cli/no-comments": "error",
 			"max-lines": maxLines(250),
+			"no-restricted-globals": GLOBALS,
 		},
 		overrides: [
 			{
-				files: ["**/*.test.ts"],
-				rules: { "max-lines": maxLines(400) },
+				files: ["**/*.test.ts", "src/test/**/*.ts"],
+				rules: { "max-lines": maxLines(400), "no-restricted-imports": IMPORTS.tests },
+			},
+			{
+				files: ADAPTER_FILES,
+				rules: {
+					"no-restricted-globals": "off",
+					"no-restricted-imports": IMPORTS.adapters,
+				},
+			},
+			{
+				files: COMPOSITION_ROOT_FILES,
+				rules: {
+					"no-restricted-globals": "off",
+					"no-restricted-imports": IMPORTS.compositionRoots,
+				},
 			},
 		],
 	},
