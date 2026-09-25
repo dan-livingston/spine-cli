@@ -1,81 +1,114 @@
 # spine-cli
 
-CLI for exported [Spine](https://esotericsoftware.com/) 2D skeletal assets. Render animations to images/video, report skeleton info.
+Render exported [Spine](https://esotericsoftware.com/) skeletons to images and video, and print what a skeleton contains.
 
-## What it does
+Works with JSON exports from Spine 4.0, 4.1 and 4.2 (`.json` + `.atlas` + PNG textures).
 
-Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG textures).
+## Install
 
-- **`render`**: rasterize an animation to `pngseq` (default), `png` (single frame), `gif`, `mp4`, `webm`, `webp`, `apng`.
-- **`info`**: Spine version, animations + durations, skins, bone/slot/attachment/constraint counts, mesh/clipping flags, atlas pages/resolution + missing-texture check.
-
-## How it works
-
-- **Rendering**: `spine-ts` WebGL backend in headless Chromium (Playwright), screenshotting frames. WebGL for full mesh + clipping fidelity (both common in targets).
-- **Version dispatch**: bundles `spine-ts` 4.0 + 4.2, picks per-skeleton from embedded `"spine"` field (format broke at 4.1; targets straddle it). 4.1 and 4.2 share a format, so the 4.2 runtime reads both. The runtimes live only in the browser harness bundle, never in the node CLI.
-- **Premultiplied alpha**: detected from the atlas. Pages that all carry the `pma` flag render premultiplied; anything else renders straight, since drawing straight-alpha textures as premultiplied blows additive slots out into boxes. Premultiplied frames are converted back to straight alpha before encoding.
-- **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir (one level deep) or glob (recursive) for batch; a batch skips skeletons that fail to resolve and reports them.
-- **Video** (`mp4`/`webm`): shells out to ffmpeg (detected on PATH; the ffmpeg Playwright bundles lacks rawvideo input and x264, so it is not used). `mp4` defaults white (no alpha); `webm` defaults transparent. Odd dimensions are padded to even, as both codecs require.
-- **GIF**: gif has 1-bit alpha, so edges against a transparent background are hard; a solid `--background` looks cleaner.
-- **Animated webp**: shells out to `img2webp` (a libwebp tool), not ffmpeg. Every frame is a key frame (`-kmax 0`) so nothing blends across frames and transparency stays exact; ffmpeg's libwebp blends with no disposal control and leaves trails behind moving semi-transparent pixels. Lossless with full alpha by default; pass `--quality 0-100` for a smaller lossy file.
-
-## Usage
-
-```
-spine-cli info <skeleton.json> [--atlas <path>] [--json] [--verbose]
-
-spine-cli render <skeleton.json | dir | glob>
-    [--atlas <path>]
-    --animation <name|all>                     # error+lists names if multiple and omitted
-    --format <pngseq|png|gif|mp4|webm|webp|apng> # default pngseq
-    --out <path> | --out-dir <dir>
-    --fps <n>                                   # default 30
-    --scale <f> | --width <px> --height <px>    # default --scale 1.0
-    --fit <declared|bounds|piece|shared>        # default declared (skeleton width/height)
-    --piece <glob>                              # render only these slots; repeatable
-    --skin <name>
-    --duration <sec> --loops <n>
-    --frame <t>                                 # single still for --format png
-    --background <color|transparent>            # default transparent; white for mp4
-    --quality <0-100>                           # webp lossy quality; omit for lossless
-    --concurrency <n> --dry-run
+```sh
+npm install -g spine-cli
 ```
 
-Batch writes `{skeleton}_{animation}.{ext}` beside each input or into `--out-dir`.
+Or run it without installing: `npx spine-cli ...`
 
-If a skeleton has more than one animation, `--animation <name|all>` is required (the error lists the names). When a directory holds multiple atlases and none matches the skeleton basename, pass `--atlas`.
+Requirements:
+
+- Chrome installed. Rendering runs in headless Chrome.
+- `ffmpeg` on `PATH` for `mp4` and `webm`.
+- `img2webp` (from libwebp) on `PATH` for `webp`.
+
+`pngseq`, `png`, `gif` and `apng` need nothing extra.
+
+## Info
+
+```sh
+spine-cli info hero.json
+```
+
+Prints the Spine version, animations and their durations, skins, bone, slot and attachment counts, and atlas pages. It also reports textures the atlas names but that are missing on disk.
+
+| Option           | Description                                       |
+| ---------------- | ------------------------------------------------- |
+| `--atlas <path>` | Atlas file. Found beside the skeleton if omitted. |
+| `--json`         | Print JSON.                                       |
+| `--verbose`      | Add per-animation and per-atlas-page detail.      |
+
+## Render
+
+```sh
+spine-cli render hero.json -a run -f gif -o run.gif
+spine-cli render hero.json -a all -f mp4 --out-dir out/
+spine-cli render characters/ -a idle -f webp
+spine-cli render hero.json -a run -f png --frame 0.5
+```
+
+The target is a `.json` file, a directory (searched one level deep), or a glob. The atlas is found next to the skeleton; pass `--atlas` if there is more than one and none shares the skeleton's name.
+
+If the skeleton has more than one animation, `-a` is required. The error lists the names.
+
+| Option                          | Description                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `-a, --animation <name>`        | Animation name, or `all`.                                                              |
+| `-f, --format <format>`         | `pngseq` (default), `png`, `gif`, `apng`, `webp`, `mp4`, `webm`.                       |
+| `-o, --out <path>`              | Output file, for a single input.                                                       |
+| `--out-dir <dir>`               | Output directory.                                                                      |
+| `--atlas <path>`                | Atlas file.                                                                            |
+| `--skin <name>`                 | Skin to apply.                                                                         |
+| `--fps <n>`                     | Frames per second. Default 30.                                                         |
+| `--scale <f>`                   | Uniform scale. Default 1.                                                              |
+| `--width <px>`, `--height <px>` | Output size. Overrides `--scale`.                                                      |
+| `--fit <mode>`                  | Framing box: `declared` (default), `bounds`, `piece`, `shared`. See [Pieces](#pieces). |
+| `--piece <globs>`               | Render only matching slots. Repeatable. See [Pieces](#pieces).                         |
+| `--duration <sec>`              | Clip length. Defaults to the animation's length.                                       |
+| `--loops <n>`                   | Play the animation n times.                                                            |
+| `--frame <t>`                   | Time in seconds of the still for `--format png`.                                       |
+| `--background <color>`          | CSS color or `transparent`. Default `transparent`, `white` for `mp4`.                  |
+| `--quality <0-100>`             | Lossy `webp` quality. Omit for lossless.                                               |
+| `--concurrency <n>`             | Skeletons rendered in parallel in a batch. Default 1.                                  |
+| `--dry-run`                     | List the files that would be written.                                                  |
+
+Without `-o`, files are named `{skeleton}_{animation}.{ext}` and written beside the skeleton, or into `--out-dir`. A batch skips skeletons it cannot load and reports them.
+
+Format notes:
+
+- `mp4` has no alpha. `webm` keeps it.
+- `gif` has only on/off transparency, so soft edges look jagged on a transparent background. Set `--background` for cleaner edges.
+- `webp` is lossless with full alpha unless you pass `--quality`.
 
 ## Pieces
 
-Render a subset of a skeleton's slots as its own output. Each `--piece` is one or more comma-joined slot globs (`*`, `?`); a slot joins the piece if any glob matches. `--piece` is repeatable, one output per flag, named `{skeleton}_{animation}_{piece}.{ext}`.
+`--piece` renders a subset of slots as its own output. Each value is one or more comma-separated slot globs (`*`, `?`). Each `--piece` flag produces one file, named `{skeleton}_{animation}_{piece}.{ext}`.
 
-`--fit` controls the framing box, which matters when pieces are meant to stack as layers:
+`--fit` sets the box the output is framed to:
 
-- `piece`: each piece tight to its own bounds. Smallest files; pieces do not align.
-- `shared`: all selected pieces share one box (their combined bounds). Stack the layers and they realign.
-- `bounds`: shared box spanning the whole skeleton (all slots). Same alignment, more margin.
-- `declared`: shared box is the declared artboard.
+| Mode       | Box                                         | Layers line up |
+| ---------- | ------------------------------------------- | -------------- |
+| `declared` | The skeleton's declared width and height.   | Yes            |
+| `bounds`   | The bounds of every slot in the skeleton.   | Yes            |
+| `shared`   | The combined bounds of the selected pieces. | Yes            |
+| `piece`    | Each piece's own bounds. Smallest files.    | No             |
 
-Boxes are the union across every frame of the clip, so an animated piece keeps a stable size instead of jittering. `piece` and `shared` require at least one `--piece`.
+Bounds cover every frame of the clip, so the output size doesn't change between frames. `piece` and `shared` need at least one `--piece`.
 
+Three layers of one animation that stack back into the full image:
+
+```sh
+spine-cli render vault.json -a open -f apng --fit shared \
+	--piece "door/*" --piece "chips/*" --piece "background/*"
 ```
-# three stackable layers of one animation, aligned in the artboard
-spine-cli render VaultSetup.json -a State0-OpenIdle --format apng --fit shared \
-    --piece "Redux/VaultDoorIsolated/*" --piece "Chips/*" --piece "images/*"
+
+## Development
+
+```sh
+pnpm install
+pnpm build   # check, bundle the browser harness, build the CLI
+pnpm test
+node dist/cli.mjs info path/to/skeleton.json
 ```
 
-## Prerequisites
+Rendering uses the `spine-ts` WebGL runtime in headless Chrome via Playwright. The 4.0 and 4.2 runtimes are bundled into `dist-harness/`, and the one used is picked from the version in the skeleton file (4.2 also reads 4.1). Run `pnpm build:harness` after changing `src/render/harness/`.
 
-- Chrome or Chromium on the system (rendering runs headless via `playwright-core`, launched with `channel: "chrome"`).
-- `ffmpeg` on PATH only for `mp4`/`webm`; `img2webp` (from libwebp) on PATH only for `webp`. The image formats (`pngseq`, `png`, `gif`, `apng`) need nothing extra.
+## License
 
-## Scripts
-
-| script               | command                        | does                       |
-| -------------------- | ------------------------------ | -------------------------- |
-| `pnpm build`         | `build-harness.mjs && vp pack` | build harness bundle + cli |
-| `pnpm build:harness` | `build-harness.mjs`            | rebuild the browser bundle |
-| `pnpm dev`           | `vp pack --watch`              | rebuild the cli on change  |
-| `pnpm check`         | `vp check`                     | format + lint + typecheck  |
-
-The browser render harness (`spine-ts` 4.0 + 4.2) bundles to `dist-harness/harness.js` via esbuild; rerun `pnpm build:harness` after editing `src/render/harness/`.
+MIT
