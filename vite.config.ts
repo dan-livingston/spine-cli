@@ -7,8 +7,8 @@ export default defineConfig({
 		"*": "vp check --fix",
 	},
 	pack: {
-		// a cli bin, not a consumed library, so no .d.ts generation
 		entry: ["src/cli.ts"],
+		dts: false,
 		exports: true,
 	},
 	lint: {
