@@ -43,6 +43,7 @@
 		"upng-js": "^2.1.0"
 	},
 	"devDependencies": {
+		"@oxlint/plugins": "^1.85.0",
 		"@types/node": "^25.6.2",
 		"@types/upng-js": "^2.1.5",
 		"bumpp": "^11.1.0",

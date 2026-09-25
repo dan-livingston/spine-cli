@@ -12,12 +12,17 @@ export default defineConfig({
 		exports: true,
 	},
 	lint: {
+		jsPlugins: [
+			{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" },
+			"./lint/no-comments.ts",
+		],
 		options: {
 			typeAware: true,
 			typeCheck: true,
 		},
 		rules: {
 			"no-restricted-imports": IMPORTS.production,
+			"spine-cli/no-comments": "error",
 		},
 	},
 	fmt: {
