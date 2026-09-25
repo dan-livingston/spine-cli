@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { AtlasPage, ParsedAtlas } from "../types.ts";
+import type { AtlasPage, ParsedAtlas } from "#/types.ts";
 
 // parse a libgdx/spine atlas. the 4.0 and 4.2 formats differ only in region
 // attribute keys (xy/size/offset vs bounds/offsets); both share the same block

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 
-import pkg from "../package.json" with { type: "json" };
-import { infoCommand } from "./commands/info.ts";
-import { renderCommand } from "./commands/render.ts";
+import { infoCommand } from "#/commands/info.ts";
+import { renderCommand } from "#/commands/render.ts";
+import pkg from "#package.json" with { type: "json" };
 
 const program = new Command();
 

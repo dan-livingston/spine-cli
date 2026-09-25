@@ -1,8 +1,8 @@
 import UPNG from "upng-js";
 
-import type { Frame } from "./png.ts";
+import type { Frame } from "#/encode/png.ts";
 
-import { toArrayBuffer } from "./png.ts";
+import { toArrayBuffer } from "#/encode/png.ts";
 
 // animated png from rgba frames. one delay (ms) per frame from fps. lossless
 // 32-bit so alpha survives.

@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Frame } from "./png.ts";
+import type { Frame } from "#/encode/png.ts";
 
-import { encodePng } from "./png.ts";
+import { encodePng } from "#/encode/png.ts";
 
 // resolve img2webp (a libwebp tool) on PATH. animated webp needs it: ffmpeg's
 // libwebp encoder blends every frame over the previous one with no disposal

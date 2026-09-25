@@ -1,5 +1,7 @@
 import { defineConfig } from "vite-plus";
 
+import { IMPORTS } from "./lint/imports.ts";
+
 export default defineConfig({
 	staged: {
 		"*": "vp check --fix",
@@ -13,6 +15,9 @@ export default defineConfig({
 		options: {
 			typeAware: true,
 			typeCheck: true,
+		},
+		rules: {
+			"no-restricted-imports": IMPORTS.production,
 		},
 	},
 	fmt: {

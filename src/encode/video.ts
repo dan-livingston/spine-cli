@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import type { Frame } from "./png.ts";
+import type { Frame } from "#/encode/png.ts";
 
 export type VideoFormat = "mp4" | "webm";
 

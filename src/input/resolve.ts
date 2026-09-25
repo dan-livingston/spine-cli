@@ -1,10 +1,10 @@
 import { glob, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
-import type { ResolvedInput } from "../types.ts";
+import type { ResolvedInput } from "#/types.ts";
 
-import { parseAtlas } from "../spine/atlas.ts";
-import { majorFor, readSpineVersion } from "../spine/version.ts";
+import { parseAtlas } from "#/spine/atlas.ts";
+import { majorFor, readSpineVersion } from "#/spine/version.ts";
 
 const ATLAS_EXTS = [".atlas.txt", ".atlas"];
 

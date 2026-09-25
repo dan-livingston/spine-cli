@@ -5,9 +5,9 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ResolvedInput } from "../types.ts";
+import type { ResolvedInput } from "#/types.ts";
 
-import { launchBrowser } from "./browser.ts";
+import { launchBrowser } from "#/render/browser.ts";
 
 // mirrors the config the browser harness expects.
 interface SessionConfig {

@@ -1,7 +1,7 @@
-import type { ResolvedInput } from "../types.ts";
+import type { ResolvedInput } from "#/types.ts";
 
-import { resolveInput } from "../input/resolve.ts";
-import { parseSkeletonInfo } from "../spine/skeleton-info.ts";
+import { resolveInput } from "#/input/resolve.ts";
+import { parseSkeletonInfo } from "#/spine/skeleton-info.ts";
 
 export interface InfoOptions {
 	atlas?: string;

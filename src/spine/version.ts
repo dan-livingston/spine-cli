@@ -1,4 +1,4 @@
-import type { SpineMajor } from "../types.ts";
+import type { SpineMajor } from "#/types.ts";
 
 // pull the exported runtime version out of a skeleton json. spine writes it into
 // skeleton.spine, e.g. { "skeleton": { "spine": "4.2.40", ... } }. older exports

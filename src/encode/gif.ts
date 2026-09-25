@@ -1,6 +1,6 @@
 import gifenc from "gifenc";
 
-import type { Frame } from "./png.ts";
+import type { Frame } from "#/encode/png.ts";
 
 // gifenc types declare its exports as methods, so destructuring trips the
 // unbound-method lint; call through the namespace instead.

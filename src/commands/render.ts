@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { Frame } from "../encode/png.ts";
-import type { Format, OutputContext } from "../render/output-path.ts";
+import type { Frame } from "#/encode/png.ts";
+import type { Format, OutputContext } from "#/render/output-path.ts";
 import type {
 	Box,
 	Clip,
@@ -10,17 +10,17 @@ import type {
 	MeasureRequest,
 	MeasureResult,
 	RenderRequest,
-} from "../render/renderer.ts";
-import type { ResolvedInput } from "../types.ts";
+} from "#/render/renderer.ts";
+import type { ResolvedInput } from "#/types.ts";
 
-import { encodeApng } from "../encode/apng.ts";
-import { encodeGif } from "../encode/gif.ts";
-import { encodePng, writePngSequence } from "../encode/png.ts";
-import { encodeVideo, findFfmpeg } from "../encode/video.ts";
-import { encodeWebp, findImg2webp } from "../encode/webp.ts";
-import { resolveInputs } from "../input/resolve.ts";
-import { isFormat, planOutput } from "../render/output-path.ts";
-import { RenderPool } from "../render/renderer.ts";
+import { encodeApng } from "#/encode/apng.ts";
+import { encodeGif } from "#/encode/gif.ts";
+import { encodePng, writePngSequence } from "#/encode/png.ts";
+import { encodeVideo, findFfmpeg } from "#/encode/video.ts";
+import { encodeWebp, findImg2webp } from "#/encode/webp.ts";
+import { resolveInputs } from "#/input/resolve.ts";
+import { isFormat, planOutput } from "#/render/output-path.ts";
+import { RenderPool } from "#/render/renderer.ts";
 
 export interface RenderOptions {
 	atlas?: string;
