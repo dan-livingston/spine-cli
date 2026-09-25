@@ -2,62 +2,31 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { Frame } from "#/encode/png.ts";
-import type {
-	Box,
-	ClipTiming,
-	Fit,
-	MeasureRequest,
-	MeasureResult,
-	RenderRequest,
-	Rgba,
-} from "#/render/harness/contract.ts";
-import type { Format } from "#/render/output-path.ts";
+import type { MeasureResult } from "#/render/harness/contract.ts";
+import type { RenderOptions } from "#/render/options.ts";
+import type { Piece } from "#/render/pieces.ts";
+import type { Job } from "#/render/plan.ts";
 import type { Clip, RenderWorker } from "#/render/renderer.ts";
-import type { ResolvedInput } from "#/types.ts";
+import type { RunParams } from "#/render/requests.ts";
 
 import { encodeApng } from "#/encode/apng.ts";
+import { findExternalEncoders } from "#/encode/external.ts";
 import { encodeGif } from "#/encode/gif.ts";
 import { encodePng, writePngSequence } from "#/encode/png.ts";
-import { encodeVideo, findFfmpeg } from "#/encode/video.ts";
-import { encodeWebp, findImg2webp } from "#/encode/webp.ts";
+import { encodeVideo } from "#/encode/video.ts";
+import { encodeWebp } from "#/encode/webp.ts";
 import { resolveInputs } from "#/input/resolve.ts";
-import { isFormat, planOutput } from "#/render/output-path.ts";
+import {
+	parseBackground,
+	parseFit,
+	parseFormat,
+	parseNumber,
+	parseWebpLossyQuality,
+} from "#/render/options.ts";
+import { assertDistinctPieceNames } from "#/render/pieces.ts";
+import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
 import { RenderPool } from "#/render/renderer.ts";
-
-export interface RenderOptions {
-	atlas?: string;
-	animation?: string;
-	format?: string;
-	out?: string;
-	outDir?: string;
-	fps?: string;
-	scale?: string;
-	width?: string;
-	height?: string;
-	fit?: string;
-	skin?: string;
-	duration?: string;
-	loops?: string;
-	frame?: string;
-	background?: string;
-	quality?: string;
-	piece?: string[];
-	concurrency?: string;
-	dryRun?: boolean;
-}
-
-interface Piece {
-	name: string;
-	slots: string[];
-}
-
-interface Job {
-	input: ResolvedInput;
-	animation: string;
-	includeAnimation: boolean;
-	piece?: Piece;
-	target: { path: string; isDir: boolean };
-}
+import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
 
 export async function renderCommand(target: string, options: RenderOptions): Promise<void> {
 	const format = parseFormat(options.format);
@@ -131,128 +100,10 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	}
 }
 
-interface JobPlan {
-	batch: boolean;
-	animation?: string;
-	pieceSpecs: string[];
-	format: Format;
-	out?: string;
-	outDir?: string;
-}
-
-function planJobs(inputs: ResolvedInput[], plan: JobPlan): Job[] {
-	return inputs.flatMap((input) => {
-		try {
-			return planSkeletonJobs(input, plan);
-		} catch (err) {
-			const reason = err instanceof Error ? err.message : String(err);
-			if (!plan.batch) throw new Error(`${input.skeletonName}: ${reason}`);
-			console.warn(`skip ${input.jsonPath}: ${reason}`);
-			return [];
-		}
-	});
-}
-
-function planSkeletonJobs(input: ResolvedInput, plan: JobPlan): Job[] {
-	assertTexturesExist(input);
-	const names = readAnimationAndSlotNames(input);
-	const animations = selectAnimations(input, names.animations, plan.animation);
-	const pieces: (Piece | undefined)[] =
-		plan.pieceSpecs.length > 0
-			? resolvePieces(input, names.slots, plan.pieceSpecs, (spec) => {
-					const reason = `--piece "${spec}" matched no slots`;
-					if (!plan.batch) throw new Error(reason);
-					console.warn(`skip ${input.jsonPath}: ${reason}`);
-				})
-			: [undefined];
-	const includeAnimation = plan.batch || animations.length > 1;
-	return animations.flatMap((animation) =>
-		pieces.map((piece) => ({
-			input,
-			animation,
-			includeAnimation,
-			piece,
-			target: planOutput({
-				jsonPath: input.jsonPath,
-				skeletonName: input.skeletonName,
-				animation,
-				includeAnimation,
-				piece: piece?.name,
-				format: plan.format,
-				out: plan.out,
-				outDir: plan.outDir,
-			}),
-		})),
-	);
-}
-
-function assertTexturesExist(input: ResolvedInput): void {
-	const missing = input.atlas.pages.filter((p) => !p.textureExists);
-	if (missing.length > 0) {
-		throw new Error(
-			`atlas texture missing on disk: ${missing.map((p) => p.texturePath).join(", ")}`,
-		);
-	}
-}
-
-function assertNoOutputCollisions(jobs: Job[]): void {
-	const byPath = new Map<string, string>();
-	for (const job of jobs) {
-		const prev = byPath.get(job.target.path);
-		if (prev) {
-			throw new Error(
-				`output collision: "${prev}" and "${job.input.jsonPath}" both write ${job.target.path}; rename or render separately`,
-			);
-		}
-		byPath.set(job.target.path, job.input.jsonPath);
-	}
-}
-
 function printDryRun(jobs: Job[]): void {
 	for (const job of jobs) {
 		console.log(`${job.target.path}${job.target.isDir ? "/ (png sequence)" : ""}`);
 	}
-}
-
-async function findExternalEncoders(
-	format: Format,
-): Promise<{ ffmpeg: string | null; img2webp: string | null }> {
-	if (format === "mp4" || format === "webm") {
-		const ffmpeg = await findFfmpeg();
-		if (!ffmpeg) {
-			throw new Error(
-				`ffmpeg not found on PATH; install ffmpeg to render ${format}. pngseq, png, gif and apng work without it`,
-			);
-		}
-		return { ffmpeg, img2webp: null };
-	}
-	if (format === "webp") {
-		const img2webp = await findImg2webp();
-		if (!img2webp) {
-			throw new Error(
-				"img2webp not found on PATH; install libwebp to render webp. pngseq, png, gif and apng work without it",
-			);
-		}
-		return { ffmpeg: null, img2webp };
-	}
-	return { ffmpeg: null, img2webp: null };
-}
-
-interface RunParams {
-	scale: number;
-	fps: number;
-	loops: number;
-	frame: number;
-	duration?: number;
-	fit: Fit;
-	width?: number;
-	height?: number;
-	skin?: string;
-	background: Rgba;
-	format: Format;
-	lossyQuality?: number;
-	ffmpeg: string | null;
-	img2webp: string | null;
 }
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
@@ -340,43 +191,10 @@ function piece(job: Job): Piece {
 	return job.piece;
 }
 
-function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
-	if (fit === "piece") return boxes.perPiece[i];
-	if (fit === "shared") return boxes.selectedUnion;
-	if (fit === "bounds") return boxes.skeletonUnion;
-	return boxes.declared;
-}
-
 function logWrote(job: Job, clip: Clip): void {
 	console.log(
 		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
 	);
-}
-
-function clipTiming(animation: string, params: RunParams): ClipTiming {
-	const isSingleStill = params.format === "png";
-	return {
-		animation,
-		skin: params.skin,
-		fps: params.fps,
-		duration: params.duration ?? 0,
-		loops: params.loops,
-		fit: params.fit,
-		times: isSingleStill ? [params.frame] : undefined,
-	};
-}
-
-function buildRequest(animation: string, params: RunParams): RenderRequest {
-	return {
-		...clipTiming(animation, params),
-		width: params.width,
-		height: params.height,
-		background: params.background,
-	};
-}
-
-function buildMeasureReq(animation: string, pieces: string[][], params: RunParams): MeasureRequest {
-	return { ...clipTiming(animation, params), pieces };
 }
 
 async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void> {
@@ -404,229 +222,4 @@ async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void>
 
 function toFrames(clip: Clip): Frame[] {
 	return clip.frames.map((data) => ({ width: clip.width, height: clip.height, data }));
-}
-
-interface SkeletonNames {
-	animations: string[];
-	slots: string[];
-}
-
-function readAnimationAndSlotNames(input: ResolvedInput): SkeletonNames {
-	const data = JSON.parse(input.jsonText) as {
-		animations?: Record<string, unknown>;
-		slots?: { name: string }[] | Record<string, unknown>;
-	};
-	const slots = data.slots;
-	return {
-		animations: Object.keys(data.animations ?? {}),
-		slots: Array.isArray(slots)
-			? slots.map((s) => s.name)
-			: slots && typeof slots === "object"
-				? Object.keys(slots)
-				: [],
-	};
-}
-
-function selectAnimations(
-	input: ResolvedInput,
-	names: string[],
-	requested: string | undefined,
-): string[] {
-	if (names.length === 0) throw new Error(`${input.skeletonName}: skeleton has no animations`);
-	if (requested === "all") return names;
-	if (requested) {
-		if (!names.includes(requested)) {
-			throw new Error(
-				`${input.skeletonName}: no animation "${requested}"; have: ${names.join(", ")}`,
-			);
-		}
-		return [requested];
-	}
-	if (names.length === 1) return names;
-	throw new Error(
-		`${input.skeletonName}: multiple animations, pass --animation <name> or all; have: ${names.join(", ")}`,
-	);
-}
-
-function parseFormat(value: string | undefined): Format {
-	if (value === undefined) return "pngseq";
-	if (!isFormat(value)) {
-		throw new Error(`unknown format "${value}"; use pngseq, png, gif, apng, mp4, webm or webp`);
-	}
-	return value;
-}
-
-function parseFit(value: string | undefined, hasPieces: boolean): Fit {
-	if (value === undefined) return "declared";
-	if (value !== "declared" && value !== "bounds" && value !== "piece" && value !== "shared") {
-		throw new Error(`unknown fit "${value}"; use declared, bounds, piece or shared`);
-	}
-	if ((value === "piece" || value === "shared") && !hasPieces) {
-		throw new Error(`--fit ${value} needs at least one --piece`);
-	}
-	return value;
-}
-
-function resolvePieces(
-	input: ResolvedInput,
-	names: string[],
-	specs: string[],
-	onNoMatch: (spec: string) => void,
-): Piece[] {
-	if (names.length === 0) {
-		throw new Error(`${input.skeletonName}: skeleton has no slots to select pieces from`);
-	}
-	const pieces: Piece[] = [];
-	for (const spec of specs) {
-		const globs = spec
-			.split(",")
-			.map((g) => g.trim())
-			.filter(Boolean);
-		if (globs.length === 0) throw new Error(`empty --piece spec`);
-		const patterns = globs.map(slotGlobToRegex);
-		const slots = names.filter((n) => patterns.some((re) => re.test(n)));
-		if (slots.length === 0) {
-			onNoMatch(spec);
-			continue;
-		}
-		pieces.push({ name: filenameSafePieceName(spec), slots });
-	}
-	return pieces;
-}
-
-function slotGlobToRegex(glob: string): RegExp {
-	const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-	const body = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
-	return new RegExp(`^${body}$`);
-}
-
-function assertDistinctPieceNames(specs: string[]): void {
-	const byName = new Map<string, string>();
-	for (const spec of specs) {
-		const name = filenameSafePieceName(spec);
-		const prev = byName.get(name);
-		if (prev !== undefined) {
-			throw new Error(
-				`--piece "${prev}" and "${spec}" both map to output name "${name}"; rename one`,
-			);
-		}
-		byName.set(name, spec);
-	}
-}
-
-function filenameSafePieceName(spec: string): string {
-	const name = spec
-		.replace(/\*/g, "")
-		.replace(/[^A-Za-z0-9._-]+/g, "-")
-		.replace(/-+/g, "-")
-		.replace(/^-|-$/g, "");
-	return name || "piece";
-}
-
-interface NumberBounds {
-	min?: number;
-	exclusiveMin?: boolean;
-	max?: number;
-}
-
-function parseNumber(
-	value: string | undefined,
-	name: string,
-	fallback: number,
-	bounds: NumberBounds,
-): number {
-	if (value === undefined) return fallback;
-	const n = Number(value);
-	if (!Number.isFinite(n)) throw new Error(`--${name} must be a number, got "${value}"`);
-	if (bounds.min !== undefined) {
-		if (bounds.exclusiveMin ? n <= bounds.min : n < bounds.min) {
-			throw new Error(`--${name} must be ${bounds.exclusiveMin ? ">" : ">="} ${bounds.min}`);
-		}
-	}
-	if (bounds.max !== undefined && n > bounds.max) {
-		throw new Error(`--${name} must be <= ${bounds.max}`);
-	}
-	return n;
-}
-
-function parseWebpLossyQuality(value: string | undefined, format: Format): number | undefined {
-	if (value === undefined) return undefined;
-	if (format !== "webp") {
-		throw new Error(`--quality only applies to webp; ${format} has no lossy quality knob`);
-	}
-	return Math.round(parseNumber(value, "quality", 0, { min: 0, max: 100 }));
-}
-
-const TRANSPARENT: Rgba = { r: 0, g: 0, b: 0, a: 0 };
-
-const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };
-
-function parseBackground(value: string | undefined, format: Format): Rgba {
-	const formatHasAlpha = format !== "mp4";
-	if (value === undefined) return { ...(formatHasAlpha ? TRANSPARENT : OPAQUE_WHITE) };
-	const color = parseColor(value);
-	if (!color) throw new Error(`unrecognized color "${value}"`);
-	if (!formatHasAlpha && color.a < 1) {
-		throw new Error(
-			`mp4 has no alpha channel; --background must be opaque (got "${value}"); use webm for transparency`,
-		);
-	}
-	return color;
-}
-
-const NAMED: Record<string, [number, number, number]> = {
-	black: [0, 0, 0],
-	white: [255, 255, 255],
-	red: [255, 0, 0],
-	green: [0, 128, 0],
-	blue: [0, 0, 255],
-	gray: [128, 128, 128],
-	grey: [128, 128, 128],
-	yellow: [255, 255, 0],
-	cyan: [0, 255, 255],
-	magenta: [255, 0, 255],
-};
-
-function parseColor(raw: string): Rgba | null {
-	const value = raw.trim().toLowerCase();
-	if (value === "transparent" || value === "none") return { ...TRANSPARENT };
-	if (NAMED[value]) {
-		const [r, g, b] = NAMED[value];
-		return { r: r / 255, g: g / 255, b: b / 255, a: 1 };
-	}
-	if (value.startsWith("#")) return parseHex(value.slice(1));
-	const rgb = /^rgba?\(([^)]+)\)$/.exec(value);
-	if (rgb) return parseRgbFn(rgb[1]);
-	return null;
-}
-
-function parseHex(hex: string): Rgba | null {
-	let r: number;
-	let g: number;
-	let b: number;
-	let a = 255;
-	if (hex.length === 3 || hex.length === 4) {
-		r = parseInt(hex[0] + hex[0], 16);
-		g = parseInt(hex[1] + hex[1], 16);
-		b = parseInt(hex[2] + hex[2], 16);
-		if (hex.length === 4) a = parseInt(hex[3] + hex[3], 16);
-	} else if (hex.length === 6 || hex.length === 8) {
-		r = parseInt(hex.slice(0, 2), 16);
-		g = parseInt(hex.slice(2, 4), 16);
-		b = parseInt(hex.slice(4, 6), 16);
-		if (hex.length === 8) a = parseInt(hex.slice(6, 8), 16);
-	} else {
-		return null;
-	}
-	if ([r, g, b, a].some((n) => Number.isNaN(n))) return null;
-	return { r: r / 255, g: g / 255, b: b / 255, a: a / 255 };
-}
-
-function parseRgbFn(body: string): Rgba | null {
-	const parts = body.split(",").map((p) => p.trim());
-	if (parts.length < 3 || parts.length > 4) return null;
-	const [r, g, b] = parts.map((p) => Number(p));
-	const a = parts.length === 4 ? Number(parts[3]) : 1;
-	if ([r, g, b, a].some((n) => Number.isNaN(n))) return null;
-	return { r: r / 255, g: g / 255, b: b / 255, a };
 }

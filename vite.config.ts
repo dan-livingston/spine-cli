@@ -1,6 +1,12 @@
+import type { DummyRuleMap } from "vite-plus/lint";
+
 import { defineConfig } from "vite-plus";
 
 import { IMPORTS } from "./lint/imports.ts";
+
+function maxLines(max: number): DummyRuleMap["max-lines"] {
+	return ["error", { max, skipBlankLines: false, skipComments: false }];
+}
 
 export default defineConfig({
 	staged: {
@@ -23,7 +29,14 @@ export default defineConfig({
 		rules: {
 			"no-restricted-imports": IMPORTS.production,
 			"spine-cli/no-comments": "error",
+			"max-lines": maxLines(250),
 		},
+		overrides: [
+			{
+				files: ["**/*.test.ts"],
+				rules: { "max-lines": maxLines(400) },
+			},
+		],
 	},
 	fmt: {
 		tabWidth: 4,
