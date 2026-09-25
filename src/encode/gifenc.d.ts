@@ -1,5 +1,3 @@
-// gifenc ships no types; declare the minimal surface we use. it is a cjs module
-// whose named functions live on the default export.
 declare module "gifenc" {
 	export type Palette = number[][];
 

@@ -1,3 +1,4 @@
+import type { AnimationInfo } from "#/spine/skeleton-info.ts";
 import type { ResolvedInput } from "#/types.ts";
 
 import { resolveInput } from "#/input/resolve.ts";
@@ -20,7 +21,6 @@ export async function infoCommand(skeleton: string, options: InfoOptions): Promi
 	console.log(renderText(input, info, options.verbose ?? false));
 }
 
-// structured json payload, stable keys, no human text.
 function buildJson(input: ResolvedInput, info: ReturnType<typeof parseSkeletonInfo>) {
 	return {
 		name: input.skeletonName,
@@ -59,12 +59,7 @@ function renderText(
 
 	lines.push(`${input.skeletonName}  (spine ${input.version})`);
 
-	// animations with durations, name column padded to the longest name
-	lines.push(`animations (${info.animations.length}):`);
-	const nameWidth = Math.max(0, ...info.animations.map((a) => a.name.length));
-	for (const a of info.animations) {
-		lines.push(`  ${a.name.padEnd(nameWidth)}  ${a.duration.toFixed(3)}s`);
-	}
+	lines.push(...animationLines(info.animations));
 
 	const skinNames = info.skins.length > 0 ? info.skins.join(", ") : "(none)";
 	lines.push(`skins (${info.skins.length}): ${skinNames}`);
@@ -92,6 +87,14 @@ function renderText(
 	}
 
 	return lines.join("\n");
+}
+
+function animationLines(animations: AnimationInfo[]): string[] {
+	const nameWidth = Math.max(0, ...animations.map((a) => a.name.length));
+	return [
+		`animations (${animations.length}):`,
+		...animations.map((a) => `  ${a.name.padEnd(nameWidth)}  ${a.duration.toFixed(3)}s`),
+	];
 }
 
 function yn(value: boolean): string {

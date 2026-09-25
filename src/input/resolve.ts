@@ -1,5 +1,5 @@
 import { glob, readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import type { ResolvedInput } from "#/types.ts";
 
@@ -8,9 +8,6 @@ import { majorFor, readSpineVersion } from "#/spine/version.ts";
 
 const ATLAS_EXTS = [".atlas.txt", ".atlas"];
 
-// resolve one skeleton json into a fully loaded input. the atlas is found beside
-// the json (same basename first, else the only atlas in the directory) unless
-// atlasOverride is given.
 export async function resolveInput(
 	jsonPath: string,
 	atlasOverride?: string,
@@ -36,9 +33,6 @@ export async function resolveInput(
 	};
 }
 
-// resolve a file, directory, or glob into one or more inputs. a directory is
-// scanned one level deep; use a glob for recursion. jsons without a resolvable
-// atlas or spine version are reported via onSkip rather than aborting a batch.
 export async function resolveInputs(
 	target: string,
 	atlasOverride: string | undefined,
@@ -47,15 +41,14 @@ export async function resolveInputs(
 	const jsonPaths = await collectJsonPaths(target);
 	if (jsonPaths.length === 0) throw new Error(`no skeleton json found for "${target}"`);
 
-	// an explicit --atlas applies to every resolved skeleton (shared atlas).
+	const isBatch = jsonPaths.length > 1;
 	const inputs: ResolvedInput[] = [];
 	for (const path of jsonPaths) {
 		try {
 			inputs.push(await resolveInput(path, atlasOverride));
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
-			// a single explicit target surfaces its error; a batch skips and continues
-			if (!onSkip || jsonPaths.length === 1) throw err;
+			if (!onSkip || !isBatch) throw err;
 			onSkip(path, reason);
 		}
 	}
@@ -89,14 +82,18 @@ async function collectJsonPaths(target: string): Promise<string[]> {
 
 async function findAtlas(jsonPath: string, skeletonName: string): Promise<string> {
 	const dir = dirname(jsonPath);
+	return (await findSameNamedAtlas(dir, skeletonName)) ?? (await findOnlyAtlas(dir, jsonPath));
+}
 
-	// prefer an atlas that shares the skeleton's basename
+async function findSameNamedAtlas(dir: string, skeletonName: string): Promise<string | null> {
 	for (const ext of ATLAS_EXTS) {
 		const candidate = join(dir, `${skeletonName}${ext}`);
 		if (await exists(candidate)) return candidate;
 	}
+	return null;
+}
 
-	// else the single atlas in the directory, if unambiguous
+async function findOnlyAtlas(dir: string, jsonPath: string): Promise<string> {
 	const entries = await readdir(dir);
 	const atlases = entries.filter((name) => ATLAS_EXTS.some((ext) => name.endsWith(ext)));
 	if (atlases.length === 1) return join(dir, atlases[0]);
@@ -123,9 +120,4 @@ async function readText(path: string, label: string): Promise<string> {
 	} catch {
 		throw new Error(`could not read ${label}: ${path}`);
 	}
-}
-
-// exported for reuse/testing: strip a skeleton path to its default output base.
-export function defaultBase(input: ResolvedInput): string {
-	return input.skeletonName || basename(input.jsonPath, extname(input.jsonPath));
 }

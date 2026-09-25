@@ -2,32 +2,33 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import UPNG from "upng-js";
 
-// a raw rgba frame (top-down) plus its size.
+export const LOSSLESS_RGBA = 0;
+
 export interface Frame {
 	width: number;
 	height: number;
 	data: Uint8Array;
 }
 
-// lossless 32-bit png bytes for a single rgba frame.
 export function encodePng(frame: Frame): Uint8Array {
-	const out = UPNG.encode([toArrayBuffer(frame.data)], frame.width, frame.height, 0);
+	const out = UPNG.encode([toArrayBuffer(frame.data)], frame.width, frame.height, LOSSLESS_RGBA);
 	return new Uint8Array(out);
 }
 
-// write NNNN.png (zero padded, 1-based) for each frame into dir.
 export async function writePngSequence(dir: string, frames: Frame[]): Promise<void> {
 	await mkdir(dir, { recursive: true });
-	const pad = Math.max(4, String(frames.length).length);
 	await Promise.all(
-		frames.map((frame, i) => {
-			const name = `${String(i + 1).padStart(pad, "0")}.png`;
-			return writeFile(join(dir, name), encodePng(frame));
-		}),
+		frames.map((frame, i) =>
+			writeFile(join(dir, sequenceFileName(i, frames.length)), encodePng(frame)),
+		),
 	);
 }
 
-// upng needs an ArrayBuffer; hand it a tight copy of the frame bytes.
+export function sequenceFileName(index: number, count: number): string {
+	const digits = Math.max(4, String(count).length);
+	return `${String(index + 1).padStart(digits, "0")}.png`;
+}
+
 export function toArrayBuffer(u: Uint8Array): ArrayBuffer {
 	return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
 }

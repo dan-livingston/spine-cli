@@ -5,103 +5,27 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ResolvedInput } from "#/types.ts";
+import type {
+	HarnessApi,
+	MeasureRequest,
+	MeasureResult,
+	RenderRequest,
+	SessionConfig,
+	SessionMeta,
+} from "#/render/harness/contract.ts";
+import type { AtlasPage, ResolvedInput } from "#/types.ts";
 
 import { launchBrowser } from "#/render/browser.ts";
 
-// mirrors the config the browser harness expects.
-interface SessionConfig {
-	major: "4.0" | "4.2";
-	jsonText: string;
-	atlasText: string;
-	pages: { name: string; dataUrl: string }[];
-	scale: number;
-}
-
-export interface AnimationMeta {
-	name: string;
-	duration: number;
-}
-
-export interface Box {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
-export type Fit = "declared" | "bounds" | "piece" | "shared";
-
-export interface SessionMeta {
-	animations: AnimationMeta[];
-	skins: string[];
-	slots: string[];
-	declared: Box;
-}
-
-export interface RenderRequest {
-	animation: string;
-	skin?: string;
-	fps: number;
-	duration: number;
-	loops: number;
-	times?: number[];
-	fit: Fit;
-	// only draw these slots (a piece); undefined draws the whole skeleton
-	slots?: string[];
-	// explicit framing box (scaled space); overrides fit when set
-	box?: Box;
-	width?: number;
-	height?: number;
-	background: { r: number; g: number; b: number; a: number };
-	// override the atlas pma flag; omit to auto-detect from the atlas (straight vs
-	// premultiplied). rendering straight textures as premultiplied boxes additive slots.
-	premultipliedAlpha?: boolean;
-}
-
-// measure the framing boxes a set of pieces occupy over a whole clip.
-export interface MeasureRequest {
-	animation: string;
-	skin?: string;
-	fps: number;
-	duration: number;
-	loops: number;
-	times?: number[];
-	// which framing box the caller will read; measure only computes that one
-	fit: Fit;
-	pieces: string[][];
-}
-
-export interface MeasureResult {
-	perPiece: Box[];
-	selectedUnion: Box;
-	skeletonUnion: Box;
-	declared: Box;
-}
-
-// a decoded clip: raw rgba frames (top-down), all sized width x height.
 export interface Clip {
 	width: number;
 	height: number;
 	frames: Uint8Array[];
 }
 
-// shape of the api the harness attaches to window.
-interface HarnessApi {
-	createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
-	renderAnimation(
-		id: number,
-		req: RenderRequest,
-	): Promise<{ width: number; height: number; frames: string[] }>;
-	measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
-	disposeSession(id: number): void;
-}
 type HarnessWindow = typeof globalThis & { SpineHarness: HarnessApi };
 
-// the harness ships in dist-harness/ at the package root. this file lives at a
-// different depth in dev (src/render/) vs the built bundle (dist/), so walk up
-// until we find it rather than hardcoding a relative depth.
-async function findHarness(): Promise<string> {
+async function findHarnessInAncestorDirs(): Promise<string> {
 	let dir = dirname(fileURLToPath(import.meta.url));
 	for (;;) {
 		const candidate = join(dir, "dist-harness", "harness.js");
@@ -123,7 +47,6 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
-// owns the browser and the harness script text; hands out one worker page each.
 export class RenderPool {
 	private readonly browser: Browser;
 	private readonly harnessJs: string;
@@ -134,13 +57,12 @@ export class RenderPool {
 	}
 
 	static async launch(): Promise<RenderPool> {
-		const harnessPath = await findHarness();
+		const harnessPath = await findHarnessInAncestorDirs();
 		const harnessJs = await readFile(harnessPath, "utf8");
 		const browser = await launchBrowser();
 		return new RenderPool(browser, harnessJs);
 	}
 
-	// a fresh page with the harness injected. errors on the page surface loudly.
 	async worker(): Promise<RenderWorker> {
 		const page = await this.browser.newPage();
 		const errors: string[] = [];
@@ -159,7 +81,6 @@ export class RenderPool {
 	}
 }
 
-// drives one page: build a skeleton, render animations, read frames back.
 export class RenderWorker {
 	private readonly page: Page;
 	private readonly errors: string[];
@@ -174,7 +95,7 @@ export class RenderWorker {
 		scale: number,
 	): Promise<{ id: number; meta: SessionMeta }> {
 		const config = await sessionConfig(input, scale);
-		return this.guard(() =>
+		return this.withPageErrors(() =>
 			this.page.evaluate(
 				(cfg) => (window as HarnessWindow).SpineHarness.createSession(cfg),
 				config,
@@ -183,7 +104,7 @@ export class RenderWorker {
 	}
 
 	async render(id: number, req: RenderRequest): Promise<Clip> {
-		const res = await this.guard(() =>
+		const res = await this.withPageErrors(() =>
 			this.page.evaluate(
 				(a) => (window as HarnessWindow).SpineHarness.renderAnimation(a.id, a.req),
 				{ id, req },
@@ -194,7 +115,7 @@ export class RenderWorker {
 	}
 
 	async measure(id: number, req: MeasureRequest): Promise<MeasureResult> {
-		return this.guard(() =>
+		return this.withPageErrors(() =>
 			this.page.evaluate(
 				(a) => (window as HarnessWindow).SpineHarness.measurePieces(a.id, a.req),
 				{ id, req },
@@ -209,8 +130,7 @@ export class RenderWorker {
 		);
 	}
 
-	// run a page call, attaching any page-side error text if it throws.
-	private async guard<T>(fn: () => Promise<T>): Promise<T> {
+	private async withPageErrors<T>(fn: () => Promise<T>): Promise<T> {
 		try {
 			return await fn();
 		} catch (err) {
@@ -221,18 +141,10 @@ export class RenderWorker {
 	}
 }
 
-// load atlas page textures as base64 data urls the browser Image() can consume.
 async function sessionConfig(input: ResolvedInput, scale: number): Promise<SessionConfig> {
-	const pages: { name: string; dataUrl: string }[] = [];
+	const pages: SessionConfig["pages"] = [];
 	for (const page of input.atlas.pages) {
-		if (!page.textureExists) {
-			throw new Error(`atlas texture missing on disk: ${page.texturePath}`);
-		}
-		const bytes = await readFile(page.texturePath);
-		pages.push({
-			name: page.name,
-			dataUrl: `data:${mime(page.name)};base64,${bytes.toString("base64")}`,
-		});
+		pages.push({ name: page.name, dataUrl: await textureDataUrl(page) });
 	}
 	return {
 		major: input.major,
@@ -241,6 +153,14 @@ async function sessionConfig(input: ResolvedInput, scale: number): Promise<Sessi
 		pages,
 		scale,
 	};
+}
+
+async function textureDataUrl(page: AtlasPage): Promise<string> {
+	if (!page.textureExists) {
+		throw new Error(`atlas texture missing on disk: ${page.texturePath}`);
+	}
+	const bytes = await readFile(page.texturePath);
+	return `data:${mime(page.name)};base64,${bytes.toString("base64")}`;
 }
 
 function mime(name: string): string {

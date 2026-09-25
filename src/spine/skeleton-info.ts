@@ -1,10 +1,5 @@
-// parse a skeleton json string into structured, render-agnostic info. works for
-// both 4.0 and 4.2 exports; shape differences (skins array vs object, physics
-// only in 4.2) are handled here.
-
 export interface AnimationInfo {
 	name: string;
-	// duration in seconds, = max keyframe time in the animation
 	duration: number;
 }
 
@@ -16,12 +11,10 @@ export interface ConstraintCounts {
 }
 
 export interface SkeletonInfo {
-	// declared skeleton size from skeleton.width/height (0 if absent)
 	width: number;
 	height: number;
 	bones: number;
 	slots: number;
-	// total attachment entries summed across all skins
 	attachments: number;
 	skins: string[];
 	animations: AnimationInfo[];
@@ -30,9 +23,6 @@ export interface SkeletonInfo {
 	hasClipping: boolean;
 }
 
-// walk one skin's attachments regardless of 4.x shape. a skin is either
-// { name, attachments: { slot: { attachment: {type?} } } } (4.x array form) or a
-// bare { slot: { attachment: {type?} } } (older 4.0 object form).
 interface SkinShape {
 	name: string;
 	attachments: Record<string, Record<string, { type?: string }>>;
@@ -90,25 +80,27 @@ export function parseSkeletonInfo(jsonText: string): SkeletonInfo {
 	};
 }
 
-// coerce skins into a uniform array of { name, attachments } across both shapes.
 function normalizeSkins(raw: unknown): SkinShape[] {
-	if (Array.isArray(raw)) {
-		return raw.map((s) => {
-			const skin = (s ?? {}) as Record<string, unknown>;
-			return {
-				name: typeof skin.name === "string" ? skin.name : "default",
-				attachments: attachmentsOf(skin.attachments),
-			};
-		});
-	}
-	if (raw && typeof raw === "object") {
-		// older 4.0 object form: { skinName: { slot: {...} } }
-		return Object.entries(raw as Record<string, unknown>).map(([name, slots]) => ({
-			name,
-			attachments: attachmentsOf(slots),
-		}));
-	}
+	if (Array.isArray(raw)) return skinsFromArrayForm(raw);
+	if (raw && typeof raw === "object") return skinsFromOlderObjectForm(raw);
 	return [];
+}
+
+function skinsFromArrayForm(raw: unknown[]): SkinShape[] {
+	return raw.map((s) => {
+		const skin = (s ?? {}) as Record<string, unknown>;
+		return {
+			name: typeof skin.name === "string" ? skin.name : "default",
+			attachments: attachmentsOf(skin.attachments),
+		};
+	});
+}
+
+function skinsFromOlderObjectForm(raw: object): SkinShape[] {
+	return Object.entries(raw as Record<string, unknown>).map(([name, slots]) => ({
+		name,
+		attachments: attachmentsOf(slots),
+	}));
 }
 
 function attachmentsOf(raw: unknown): SkinShape["attachments"] {
@@ -120,33 +112,28 @@ function normalizeAnimations(raw: unknown): AnimationInfo[] {
 	if (!raw || typeof raw !== "object") return [];
 	return Object.entries(raw as Record<string, unknown>).map(([name, anim]) => ({
 		name,
-		duration: round3(maxTime(anim)),
+		duration: round3(latestKeyframeTime(anim)),
 	}));
 }
 
-// deep-walk any animation subtree and return the largest keyframe time. keyframes
-// are always elements of a timeline array (the first at 0 may omit its time), so
-// the max keyframe time is the animation duration. reading time only from array
-// elements avoids inflation from a stray non-timeline "time" property. works
-// across 4.0 and 4.2 timeline shapes.
-function maxTime(node: unknown): number {
-	let max = 0;
+function latestKeyframeTime(node: unknown): number {
 	if (Array.isArray(node)) {
-		for (const v of node) {
-			if (v && typeof v === "object" && !Array.isArray(v)) {
-				const t = (v as Record<string, unknown>).time;
-				if (typeof t === "number" && t > max) max = t;
-			}
-			const t = maxTime(v);
-			if (t > max) max = t;
-		}
-	} else if (node && typeof node === "object") {
-		for (const value of Object.values(node)) {
-			const t = maxTime(value);
-			if (t > max) max = t;
-		}
+		return largest(node.map((v) => Math.max(timelineKeyTime(v), latestKeyframeTime(v))));
 	}
-	return max;
+	if (node && typeof node === "object") {
+		return largest(Object.values(node).map(latestKeyframeTime));
+	}
+	return 0;
+}
+
+function largest(times: number[]): number {
+	return times.reduce((max, t) => (t > max ? t : max), 0);
+}
+
+function timelineKeyTime(element: unknown): number {
+	if (!element || typeof element !== "object" || Array.isArray(element)) return 0;
+	const time = (element as Record<string, unknown>).time;
+	return typeof time === "number" ? time : 0;
 }
 
 function arr(value: unknown): unknown[] {

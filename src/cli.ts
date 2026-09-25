@@ -18,7 +18,7 @@ program
 	.option("--atlas <path>", "atlas file (auto-resolved beside the skeleton by default)")
 	.option("--json", "output as JSON")
 	.option("--verbose", "include per-animation and per-atlas-page detail")
-	.action(run(infoCommand));
+	.action(exitOnError(infoCommand));
 
 program
 	.command("render <target>")
@@ -39,7 +39,7 @@ program
 	.option(
 		"--piece <glob>",
 		"render only these slots as a separate output; repeatable; comma-joins globs",
-		collect,
+		appendRepeated,
 		[],
 	)
 	.option("--skin <name>", "skin to apply")
@@ -50,18 +50,16 @@ program
 	.option("--quality <n>", "webp lossy quality 0-100 (omit for lossless)")
 	.option("--concurrency <n>", "parallel skeletons in batch (default 1)")
 	.option("--dry-run", "list what would be written without rendering")
-	.action(run(renderCommand));
+	.action(exitOnError(renderCommand));
 
 program.parseAsync().catch(fail);
 
-// commander collector for repeatable options.
-function collect(value: string, previous: string[]): string[] {
+function appendRepeated(value: string, previous: string[]): string[] {
 	previous.push(value);
 	return previous;
 }
 
-// wrap a command action so errors print cleanly and exit non-zero.
-function run<A extends unknown[]>(
+function exitOnError<A extends unknown[]>(
 	fn: (...args: A) => Promise<void>,
 ): (...args: A) => Promise<void> {
 	return async (...args: A) => {

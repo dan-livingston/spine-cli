@@ -4,8 +4,6 @@ import type { Frame } from "#/encode/png.ts";
 
 export type VideoFormat = "mp4" | "webm";
 
-// resolve an ffmpeg to drive. only a real ffmpeg on PATH is used; the build
-// bundled with playwright is stripped (no rawvideo/x264) and not suitable.
 export async function findFfmpeg(): Promise<string | null> {
 	const ok = await probe("ffmpeg");
 	return ok ? "ffmpeg" : null;
@@ -19,11 +17,13 @@ function probe(bin: string): Promise<boolean> {
 	});
 }
 
-// encode rgba frames to an mp4/webm file by piping rawvideo to ffmpeg. mp4 has
-// no alpha (yuv420p); webm keeps alpha via vp9/yuva420p. dimensions are padded to
-// even numbers as these codecs require. animated webp does not go through here:
-// ffmpeg's libwebp blends frames with no disposal control, so it lives in
-// encode/webp.ts via img2webp instead.
+const PAD_TO_EVEN_SIZE = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
+
+const CODEC_ARGS: Record<VideoFormat, string[]> = {
+	mp4: ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", PAD_TO_EVEN_SIZE],
+	webm: ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-vf", PAD_TO_EVEN_SIZE],
+};
+
 export async function encodeVideo(
 	ffmpeg: string,
 	out: string,
@@ -33,12 +33,6 @@ export async function encodeVideo(
 ): Promise<void> {
 	if (frames.length === 0) throw new Error("no frames to encode");
 	const { width, height } = frames[0];
-
-	const pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
-	const codec =
-		format === "mp4"
-			? ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", pad]
-			: ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-vf", pad];
 
 	const args = [
 		"-y",
@@ -52,7 +46,7 @@ export async function encodeVideo(
 		String(fps),
 		"-i",
 		"-",
-		...codec,
+		...CODEC_ARGS[format],
 		"-r",
 		String(fps),
 		out,
@@ -73,7 +67,6 @@ export async function encodeVideo(
 	});
 }
 
-// write frames to ffmpeg stdin, respecting backpressure.
 async function pipeFrames(stdin: NodeJS.WritableStream, frames: Frame[]): Promise<void> {
 	for (const frame of frames) {
 		if (!stdin.write(frame.data)) {

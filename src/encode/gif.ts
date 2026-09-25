@@ -2,14 +2,14 @@ import gifenc from "gifenc";
 
 import type { Frame } from "#/encode/png.ts";
 
-// gifenc types declare its exports as methods, so destructuring trips the
-// unbound-method lint; call through the namespace instead.
-// animated gif from rgba frames. gif has 1-bit alpha, so edges against a
-// transparent background are hard; a solid --background looks cleaner.
+const MIN_DELAY_MS = 10;
+
+const RESTORE_TO_BACKGROUND = 2;
+
 export function encodeGif(frames: Frame[], fps: number): Uint8Array {
 	if (frames.length === 0) throw new Error("no frames to encode");
 	const { width, height } = frames[0];
-	const delay = Math.max(10, Math.round(1000 / fps));
+	const delay = Math.max(MIN_DELAY_MS, Math.round(1000 / fps));
 	const enc = gifenc.GIFEncoder();
 
 	for (const frame of frames) {
@@ -18,14 +18,13 @@ export function encodeGif(frames: Frame[], fps: number): Uint8Array {
 			oneBitAlpha: true,
 		});
 		const index = gifenc.applyPalette(frame.data, palette, "rgba4444");
-		// gifenc puts the fully-transparent color, if any, at the palette end.
 		const transparentIndex = findTransparent(palette);
 		enc.writeFrame(index, width, height, {
 			palette,
 			delay,
 			transparent: transparentIndex >= 0,
 			transparentIndex: transparentIndex >= 0 ? transparentIndex : undefined,
-			dispose: transparentIndex >= 0 ? 2 : undefined,
+			dispose: transparentIndex >= 0 ? RESTORE_TO_BACKGROUND : undefined,
 		});
 	}
 

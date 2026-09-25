@@ -1,6 +1,3 @@
-// bundle the browser-side render harness to a single IIFE the CLI injects into a
-// headless page. spine-webgl 4.0 + 4.2 are bundled together (browser only), so
-// they are never runtime deps of the node CLI.
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 

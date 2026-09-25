@@ -2,15 +2,17 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { Frame } from "#/encode/png.ts";
-import type { Format, OutputContext } from "#/render/output-path.ts";
 import type {
 	Box,
-	Clip,
+	ClipTiming,
 	Fit,
 	MeasureRequest,
 	MeasureResult,
 	RenderRequest,
-} from "#/render/renderer.ts";
+	Rgba,
+} from "#/render/harness/contract.ts";
+import type { Format } from "#/render/output-path.ts";
+import type { Clip, RenderWorker } from "#/render/renderer.ts";
 import type { ResolvedInput } from "#/types.ts";
 
 import { encodeApng } from "#/encode/apng.ts";
@@ -44,22 +46,11 @@ export interface RenderOptions {
 	dryRun?: boolean;
 }
 
-interface Rgba {
-	r: number;
-	g: number;
-	b: number;
-	a: number;
-}
-
-// one piece of a skeleton: a name (for the filename) and the resolved slots it
-// draws. absent for a whole-skeleton render.
 interface Piece {
 	name: string;
 	slots: string[];
 }
 
-// a single unit of work: one animation of one skeleton (optionally one piece) to
-// one output target.
 interface Job {
 	input: ResolvedInput;
 	animation: string;
@@ -87,100 +78,24 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	const pieceSpecs = options.piece ?? [];
 	const fit = parseFit(options.fit, pieceSpecs.length > 0);
 	const background = parseBackground(options.background, format);
-	const quality = parseQuality(options.quality, format);
+	const lossyQuality = parseWebpLossyQuality(options.quality, format);
 
-	// two --piece specs can normalize to the same filename; catch it up front (the
-	// specs apply to every skeleton) instead of as an opaque output collision that
-	// names the same input twice.
 	assertDistinctPieceNames(pieceSpecs);
 
 	const inputs = await resolveInputs(target, options.atlas, (path, reason) => {
 		console.warn(`skip ${path}: ${reason}`);
 	});
-	const batch = inputs.length > 1;
 
-	// plan every job up front so --dry-run and naming share one code path. bad
-	// inputs (missing texture, no animation) are skipped in a batch and surfaced
-	// for a single target, mirroring resolveInputs' skip-and-continue design.
-	const jobs: Job[] = [];
-	const skip = (input: ResolvedInput, reason: string): boolean => {
-		if (!batch) throw new Error(`${input.skeletonName}: ${reason}`);
-		console.warn(`skip ${input.jsonPath}: ${reason}`);
-		return true;
-	};
-	for (const input of inputs) {
-		const missing = input.atlas.pages.filter((p) => !p.textureExists);
-		if (missing.length > 0) {
-			if (
-				skip(
-					input,
-					`atlas texture missing on disk: ${missing.map((p) => p.texturePath).join(", ")}`,
-				)
-			)
-				continue;
-		}
-		// parse the skeleton json once; animation and slot names both come from it
-		const skeleton = readSkeleton(input);
-		let animations: string[];
-		try {
-			animations = selectAnimations(input, skeleton.animations, options.animation);
-		} catch (err) {
-			if (skip(input, err instanceof Error ? err.message : String(err))) continue;
-			animations = [];
-		}
-		let pieces: Piece[] | undefined;
-		if (pieceSpecs.length > 0) {
-			try {
-				// a spec that matches no slot on this skeleton drops just that piece in
-				// a batch (keeping the skeleton's other pieces); fatal for a single target.
-				pieces = resolvePieces(input, skeleton.slots, pieceSpecs, (spec) => {
-					// non-batch: throw so the catch's skip() surfaces it fatally (skip
-					// prepends the skeleton name). batch: warn and drop just this piece.
-					if (!batch) throw new Error(`--piece "${spec}" matched no slots`);
-					console.warn(`skip ${input.jsonPath}: --piece "${spec}" matched no slots`);
-				});
-			} catch (err) {
-				if (skip(input, err instanceof Error ? err.message : String(err))) continue;
-				animations = [];
-			}
-			// every spec missed on this skeleton: nothing piece-related to render
-			if (pieces && pieces.length === 0) continue;
-		}
-		const includeAnimation = batch || animations.length > 1;
-		for (const animation of animations) {
-			const emit = (piece?: Piece): void => {
-				const ctx: OutputContext = {
-					jsonPath: input.jsonPath,
-					skeletonName: input.skeletonName,
-					animation,
-					includeAnimation,
-					piece: piece?.name,
-					format,
-					out: options.out,
-					outDir: options.outDir,
-				};
-				jobs.push({ input, animation, includeAnimation, piece, target: planOutput(ctx) });
-			};
-			if (pieces) pieces.forEach((p) => emit(p));
-			else emit();
-		}
-	}
-
+	const jobs = planJobs(inputs, {
+		batch: inputs.length > 1,
+		animation: options.animation,
+		pieceSpecs,
+		format,
+		out: options.out,
+		outDir: options.outDir,
+	});
 	if (jobs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);
-
-	// two skeletons with the same basename from different dirs would map to the
-	// same output and silently overwrite; catch it before rendering.
-	const byPath = new Map<string, string>();
-	for (const job of jobs) {
-		const prev = byPath.get(job.target.path);
-		if (prev) {
-			throw new Error(
-				`output collision: "${prev}" and "${job.input.jsonPath}" both write ${job.target.path}; rename or render separately`,
-			);
-		}
-		byPath.set(job.target.path, job.input.jsonPath);
-	}
-
+	assertNoOutputCollisions(jobs);
 	if (options.out && jobs.length > 1) {
 		throw new Error(
 			`--out writes a single output but ${jobs.length} are planned; use --out-dir`,
@@ -188,37 +103,15 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 	}
 
 	if (options.dryRun) {
-		for (const job of jobs) {
-			console.log(`${job.target.path}${job.target.isDir ? "/ (png sequence)" : ""}`);
-		}
+		printDryRun(jobs);
 		return;
 	}
 
-	// video needs an external encoder; fail early with a clear message before
-	// launching. mp4/webm use ffmpeg; webp uses img2webp (see encode/webp.ts).
-	let ffmpeg: string | null = null;
-	let img2webp: string | null = null;
-	if (format === "mp4" || format === "webm") {
-		ffmpeg = await findFfmpeg();
-		if (!ffmpeg) {
-			throw new Error(
-				`ffmpeg not found on PATH; install ffmpeg to render ${format}. pngseq, png, gif and apng work without it`,
-			);
-		}
-	} else if (format === "webp") {
-		img2webp = await findImg2webp();
-		if (!img2webp) {
-			throw new Error(
-				"img2webp not found on PATH; install libwebp to render webp. pngseq, png, gif and apng work without it",
-			);
-		}
-	}
-
+	const encoders = await findExternalEncoders(format);
 	const pool = await RenderPool.launch();
 	try {
-		// group jobs by their skeleton so a worker builds each skeleton once.
-		const groups = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
-		await runJobs(pool, groups, Math.min(concurrency, inputs.length), {
+		const jobsBySkeleton = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
+		await runJobs(pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
 			scale,
 			fps,
 			loops,
@@ -230,13 +123,119 @@ export async function renderCommand(target: string, options: RenderOptions): Pro
 			skin: options.skin,
 			background,
 			format,
-			quality,
-			ffmpeg,
-			img2webp,
+			lossyQuality,
+			...encoders,
 		});
 	} finally {
 		await pool.close();
 	}
+}
+
+interface JobPlan {
+	batch: boolean;
+	animation?: string;
+	pieceSpecs: string[];
+	format: Format;
+	out?: string;
+	outDir?: string;
+}
+
+function planJobs(inputs: ResolvedInput[], plan: JobPlan): Job[] {
+	return inputs.flatMap((input) => {
+		try {
+			return planSkeletonJobs(input, plan);
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			if (!plan.batch) throw new Error(`${input.skeletonName}: ${reason}`);
+			console.warn(`skip ${input.jsonPath}: ${reason}`);
+			return [];
+		}
+	});
+}
+
+function planSkeletonJobs(input: ResolvedInput, plan: JobPlan): Job[] {
+	assertTexturesExist(input);
+	const names = readAnimationAndSlotNames(input);
+	const animations = selectAnimations(input, names.animations, plan.animation);
+	const pieces: (Piece | undefined)[] =
+		plan.pieceSpecs.length > 0
+			? resolvePieces(input, names.slots, plan.pieceSpecs, (spec) => {
+					const reason = `--piece "${spec}" matched no slots`;
+					if (!plan.batch) throw new Error(reason);
+					console.warn(`skip ${input.jsonPath}: ${reason}`);
+				})
+			: [undefined];
+	const includeAnimation = plan.batch || animations.length > 1;
+	return animations.flatMap((animation) =>
+		pieces.map((piece) => ({
+			input,
+			animation,
+			includeAnimation,
+			piece,
+			target: planOutput({
+				jsonPath: input.jsonPath,
+				skeletonName: input.skeletonName,
+				animation,
+				includeAnimation,
+				piece: piece?.name,
+				format: plan.format,
+				out: plan.out,
+				outDir: plan.outDir,
+			}),
+		})),
+	);
+}
+
+function assertTexturesExist(input: ResolvedInput): void {
+	const missing = input.atlas.pages.filter((p) => !p.textureExists);
+	if (missing.length > 0) {
+		throw new Error(
+			`atlas texture missing on disk: ${missing.map((p) => p.texturePath).join(", ")}`,
+		);
+	}
+}
+
+function assertNoOutputCollisions(jobs: Job[]): void {
+	const byPath = new Map<string, string>();
+	for (const job of jobs) {
+		const prev = byPath.get(job.target.path);
+		if (prev) {
+			throw new Error(
+				`output collision: "${prev}" and "${job.input.jsonPath}" both write ${job.target.path}; rename or render separately`,
+			);
+		}
+		byPath.set(job.target.path, job.input.jsonPath);
+	}
+}
+
+function printDryRun(jobs: Job[]): void {
+	for (const job of jobs) {
+		console.log(`${job.target.path}${job.target.isDir ? "/ (png sequence)" : ""}`);
+	}
+}
+
+async function findExternalEncoders(
+	format: Format,
+): Promise<{ ffmpeg: string | null; img2webp: string | null }> {
+	if (format === "mp4" || format === "webm") {
+		const ffmpeg = await findFfmpeg();
+		if (!ffmpeg) {
+			throw new Error(
+				`ffmpeg not found on PATH; install ffmpeg to render ${format}. pngseq, png, gif and apng work without it`,
+			);
+		}
+		return { ffmpeg, img2webp: null };
+	}
+	if (format === "webp") {
+		const img2webp = await findImg2webp();
+		if (!img2webp) {
+			throw new Error(
+				"img2webp not found on PATH; install libwebp to render webp. pngseq, png, gif and apng work without it",
+			);
+		}
+		return { ffmpeg: null, img2webp };
+	}
+	return { ffmpeg: null, img2webp: null };
 }
 
 interface RunParams {
@@ -251,13 +250,11 @@ interface RunParams {
 	skin?: string;
 	background: Rgba;
 	format: Format;
-	// webp only: 0-100 lossy quality; undefined means lossless.
-	quality?: number;
+	lossyQuality?: number;
 	ffmpeg: string | null;
 	img2webp: string | null;
 }
 
-// group items by a key, preserving first-seen order (Map keeps insertion order).
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 	const groups = new Map<K, T[]>();
 	for (const item of items) {
@@ -268,7 +265,6 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 	return groups;
 }
 
-// a small worker pool: each worker owns a page and pulls skeleton groups.
 async function runJobs(
 	pool: RenderPool,
 	groups: Job[][],
@@ -288,18 +284,13 @@ async function runJobs(
 	await Promise.all(Array.from({ length: Math.max(1, workers) }, run));
 }
 
-async function renderGroup(
-	worker: Awaited<ReturnType<RenderPool["worker"]>>,
-	group: Job[],
-	params: RunParams,
-): Promise<void> {
+async function renderGroup(worker: RenderWorker, group: Job[], params: RunParams): Promise<void> {
 	const input = group[0].input;
 	const { id } = await worker.createSession(input, params.scale);
 	try {
 		for (const [animation, jobs] of groupBy(group, (j) => j.animation)) {
-			// pieces of one animation share a measure pass so their boxes align
 			if (jobs[0].piece) {
-				await renderPieces(worker, id, animation, jobs, params);
+				await renderAlignedPieces(worker, id, animation, jobs, params);
 			} else {
 				for (const job of jobs) {
 					const clip = await worker.render(id, buildRequest(animation, params));
@@ -313,22 +304,14 @@ async function renderGroup(
 	}
 }
 
-// render every piece of one animation, framed by a single measure pass so all
-// pieces stay aligned (or tightly cropped, for --fit piece).
-async function renderPieces(
-	worker: Awaited<ReturnType<RenderPool["worker"]>>,
+async function renderAlignedPieces(
+	worker: RenderWorker,
 	id: number,
 	animation: string,
 	jobs: Job[],
 	params: RunParams,
 ): Promise<void> {
-	// --fit declared frames each piece to the artboard, which needs no measure
-	// pass; only bounds/piece/shared walk the clip to find their box.
-	const pieces = jobs.map((j) => piece(j).slots);
-	const boxes =
-		params.fit === "declared"
-			? undefined
-			: await worker.measure(id, buildMeasureReq(animation, pieces, params));
+	const boxes = await measureFramingBoxes(worker, id, animation, jobs, params);
 	for (let i = 0; i < jobs.length; i++) {
 		const job = jobs[i];
 		const req = buildRequest(animation, params);
@@ -340,12 +323,23 @@ async function renderPieces(
 	}
 }
 
+async function measureFramingBoxes(
+	worker: RenderWorker,
+	id: number,
+	animation: string,
+	jobs: Job[],
+	params: RunParams,
+): Promise<MeasureResult | undefined> {
+	if (params.fit === "declared") return undefined;
+	const pieces = jobs.map((j) => piece(j).slots);
+	return worker.measure(id, buildMeasureReq(animation, pieces, params));
+}
+
 function piece(job: Job): Piece {
 	if (!job.piece) throw new Error(`internal: job for ${job.target.path} has no piece`);
 	return job.piece;
 }
 
-// map the resolved --fit onto one of the measured boxes.
 function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
 	if (fit === "piece") return boxes.perPiece[i];
 	if (fit === "shared") return boxes.selectedUnion;
@@ -359,37 +353,30 @@ function logWrote(job: Job, clip: Clip): void {
 	);
 }
 
-function buildRequest(animation: string, params: RunParams): RenderRequest {
-	const base: RenderRequest = {
+function clipTiming(animation: string, params: RunParams): ClipTiming {
+	const isSingleStill = params.format === "png";
+	return {
 		animation,
 		skin: params.skin,
 		fps: params.fps,
 		duration: params.duration ?? 0,
 		loops: params.loops,
 		fit: params.fit,
+		times: isSingleStill ? [params.frame] : undefined,
+	};
+}
+
+function buildRequest(animation: string, params: RunParams): RenderRequest {
+	return {
+		...clipTiming(animation, params),
 		width: params.width,
 		height: params.height,
 		background: params.background,
 	};
-	// a single still: one exact time, ignore duration/loops
-	if (params.format === "png") {
-		base.times = [params.frame];
-	}
-	return base;
 }
 
 function buildMeasureReq(animation: string, pieces: string[][], params: RunParams): MeasureRequest {
-	const req: MeasureRequest = {
-		animation,
-		skin: params.skin,
-		fps: params.fps,
-		duration: params.duration ?? 0,
-		loops: params.loops,
-		fit: params.fit,
-		pieces,
-	};
-	if (params.format === "png") req.times = [params.frame];
-	return req;
+	return { ...clipTiming(animation, params), pieces };
 }
 
 async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void> {
@@ -411,7 +398,7 @@ async function writeClip(job: Job, clip: Clip, params: RunParams): Promise<void>
 		await encodeVideo(params.ffmpeg, job.target.path, frames, params.fps, params.format);
 	} else if (params.format === "webp") {
 		if (!params.img2webp) throw new Error("img2webp unavailable");
-		await encodeWebp(params.img2webp, job.target.path, frames, params.fps, params.quality);
+		await encodeWebp(params.img2webp, job.target.path, frames, params.fps, params.lossyQuality);
 	}
 }
 
@@ -419,14 +406,12 @@ function toFrames(clip: Clip): Frame[] {
 	return clip.frames.map((data) => ({ width: clip.width, height: clip.height, data }));
 }
 
-interface SkeletonInfo {
+interface SkeletonNames {
 	animations: string[];
 	slots: string[];
 }
 
-// animation and slot names live in the json; read both in one parse without a
-// browser roundtrip so selection, pieces and --dry-run work identically.
-function readSkeleton(input: ResolvedInput): SkeletonInfo {
+function readAnimationAndSlotNames(input: ResolvedInput): SkeletonNames {
 	const data = JSON.parse(input.jsonText) as {
 		animations?: Record<string, unknown>;
 		slots?: { name: string }[] | Record<string, unknown>;
@@ -482,10 +467,6 @@ function parseFit(value: string | undefined, hasPieces: boolean): Fit {
 	return value;
 }
 
-// a --piece spec is one or more comma-separated globs; a slot joins the piece if
-// any glob matches. each spec becomes one output. specs that match no slot are
-// reported via onNoMatch rather than aborting, so a skeleton's other pieces still
-// render.
 function resolvePieces(
 	input: ResolvedInput,
 	names: string[],
@@ -502,30 +483,27 @@ function resolvePieces(
 			.map((g) => g.trim())
 			.filter(Boolean);
 		if (globs.length === 0) throw new Error(`empty --piece spec`);
-		const patterns = globs.map(globToRegex);
+		const patterns = globs.map(slotGlobToRegex);
 		const slots = names.filter((n) => patterns.some((re) => re.test(n)));
 		if (slots.length === 0) {
 			onNoMatch(spec);
 			continue;
 		}
-		pieces.push({ name: pieceName(spec), slots });
+		pieces.push({ name: filenameSafePieceName(spec), slots });
 	}
 	return pieces;
 }
 
-// glob with * (any run) and ? (one char); slot names are case-sensitive.
-function globToRegex(glob: string): RegExp {
+function slotGlobToRegex(glob: string): RegExp {
 	const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 	const body = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
 	return new RegExp(`^${body}$`);
 }
 
-// two specs that normalize to the same filename would collide on output; the
-// specs apply to every skeleton, so validate them once up front.
 function assertDistinctPieceNames(specs: string[]): void {
 	const byName = new Map<string, string>();
 	for (const spec of specs) {
-		const name = pieceName(spec);
+		const name = filenameSafePieceName(spec);
 		const prev = byName.get(name);
 		if (prev !== undefined) {
 			throw new Error(
@@ -536,8 +514,7 @@ function assertDistinctPieceNames(specs: string[]): void {
 	}
 }
 
-// derive a filename-safe piece name from its spec.
-function pieceName(spec: string): string {
+function filenameSafePieceName(spec: string): string {
 	const name = spec
 		.replace(/\*/g, "")
 		.replace(/[^A-Za-z0-9._-]+/g, "-")
@@ -572,9 +549,7 @@ function parseNumber(
 	return n;
 }
 
-// webp only: 0-100 lossy quality. undefined (flag omitted) means lossless. reject
-// it on other formats so it never silently no-ops.
-function parseQuality(value: string | undefined, format: Format): number | undefined {
+function parseWebpLossyQuality(value: string | undefined, format: Format): number | undefined {
 	if (value === undefined) return undefined;
 	if (format !== "webp") {
 		throw new Error(`--quality only applies to webp; ${format} has no lossy quality knob`);
@@ -582,16 +557,16 @@ function parseQuality(value: string | undefined, format: Format): number | undef
 	return Math.round(parseNumber(value, "quality", 0, { min: 0, max: 100 }));
 }
 
-// default transparent, except mp4 which has no alpha and defaults to white.
+const TRANSPARENT: Rgba = { r: 0, g: 0, b: 0, a: 0 };
+
+const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };
+
 function parseBackground(value: string | undefined, format: Format): Rgba {
-	if (value === undefined) {
-		return format === "mp4" ? { r: 1, g: 1, b: 1, a: 1 } : { r: 0, g: 0, b: 0, a: 0 };
-	}
+	const formatHasAlpha = format !== "mp4";
+	if (value === undefined) return { ...(formatHasAlpha ? TRANSPARENT : OPAQUE_WHITE) };
 	const color = parseColor(value);
 	if (!color) throw new Error(`unrecognized color "${value}"`);
-	// mp4 is yuv420p with no alpha; a translucent fill would silently composite
-	// onto black. reject it so the user picks an opaque color or uses webm.
-	if (format === "mp4" && color.a < 1) {
+	if (!formatHasAlpha && color.a < 1) {
 		throw new Error(
 			`mp4 has no alpha channel; --background must be opaque (got "${value}"); use webm for transparency`,
 		);
@@ -614,7 +589,7 @@ const NAMED: Record<string, [number, number, number]> = {
 
 function parseColor(raw: string): Rgba | null {
 	const value = raw.trim().toLowerCase();
-	if (value === "transparent" || value === "none") return { r: 0, g: 0, b: 0, a: 0 };
+	if (value === "transparent" || value === "none") return { ...TRANSPARENT };
 	if (NAMED[value]) {
 		const [r, g, b] = NAMED[value];
 		return { r: r / 255, g: g / 255, b: b / 255, a: 1 };

@@ -1,95 +1,21 @@
-// browser-side spine renderer. bundled to dist-harness/harness.js as an iife by
-// scripts/build-harness.mjs and injected into a headless page by the node driver.
-// both spine-webgl runtimes are imported (4.0.28 + 4.2.7, each pinned to its own
-// matching core via pnpm overrides); pick one per skeleton by the json version.
 import * as spine40 from "spine-webgl-40";
 import * as spine42 from "spine-webgl-42";
 
+import type {
+	Box,
+	ClipTiming,
+	Fit,
+	HarnessApi,
+	MeasureRequest,
+	MeasureResult,
+	RenderRequest,
+	RenderResult,
+	SessionConfig,
+	SessionMeta,
+} from "#/render/harness/contract.ts";
+import type { SpineMajor } from "#/types.ts";
+
 type Spine = typeof spine42;
-
-// config passed from node to set up one skeleton on the page.
-interface SessionConfig {
-	major: "4.0" | "4.2";
-	jsonText: string;
-	atlasText: string;
-	// atlas page image name -> data url (png/whatever)
-	pages: { name: string; dataUrl: string }[];
-	scale: number;
-}
-
-interface AnimationMeta {
-	name: string;
-	duration: number;
-}
-
-interface Box {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
-interface SessionMeta {
-	animations: AnimationMeta[];
-	skins: string[];
-	slots: string[];
-	declared: Box;
-}
-
-// per-animation render request.
-interface RenderRequest {
-	animation: string;
-	skin?: string;
-	fps: number;
-	// clip length in seconds; frames = round(duration * fps), min 1
-	duration: number;
-	loops: number;
-	// explicit still times in seconds (for --format png); overrides duration/fps
-	times?: number[];
-	fit: "declared" | "bounds" | "piece" | "shared";
-	// only draw these slots (a piece); rest are detached before drawing
-	slots?: string[];
-	// explicit framing box (scaled space); overrides fit when set
-	box?: Box;
-	width?: number;
-	height?: number;
-	// clear color, 0..1
-	background: { r: number; g: number; b: number; a: number };
-	// override the atlas pma flag; omit to auto-detect from the atlas
-	premultipliedAlpha?: boolean;
-}
-
-// measure the framing boxes a set of pieces occupy over a whole clip. cheap: no
-// pixel readback. node picks one of these per --fit to keep pieces aligned.
-interface MeasureRequest {
-	animation: string;
-	skin?: string;
-	fps: number;
-	duration: number;
-	loops: number;
-	times?: number[];
-	// which framing box node will read; only that one is measured
-	fit: "declared" | "bounds" | "piece" | "shared";
-	// resolved slot names per piece, in the same order as the render jobs
-	pieces: string[][];
-}
-
-interface MeasureResult {
-	// tight box for each piece, union over every frame
-	perPiece: Box[];
-	// union of every selected piece
-	selectedUnion: Box;
-	// union of the whole skeleton (all slots)
-	skeletonUnion: Box;
-	declared: Box;
-}
-
-interface RenderResult {
-	width: number;
-	height: number;
-	// one base64 rgba (top-down, w*h*4 bytes) per frame
-	frames: string[];
-}
 
 interface Session {
 	spine: Spine;
@@ -100,17 +26,16 @@ interface Session {
 	skeletonData: spine42.SkeletonData;
 	state: spine42.AnimationState;
 	stateData: spine42.AnimationStateData;
-	// json scale applied to geometry; declared box is stored unscaled
 	scale: number;
-	// true only if every atlas page is premultiplied (pma flag). straight-alpha
-	// atlases must render straight or additive slots blow out into boxes.
-	premultipliedAlpha: boolean;
+	atlasIsPremultiplied: boolean;
 }
+
+const PROVISIONAL_CANVAS_SIZE = 16;
 
 const sessions = new Map<number, Session>();
 let nextId = 1;
 
-function pickSpine(major: "4.0" | "4.2"): Spine {
+function pickSpine(major: SpineMajor): Spine {
 	return major === "4.0" ? (spine40 as unknown as Spine) : spine42;
 }
 
@@ -123,31 +48,18 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
 	});
 }
 
-// build a skeleton on a fresh webgl canvas. size is provisional; the real output
-// size is set per render once we know the framing box.
 async function createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }> {
 	const spine = pickSpine(config.major);
 
 	const canvas = document.createElement("canvas");
-	canvas.width = 16;
-	canvas.height = 16;
+	canvas.width = PROVISIONAL_CANVAS_SIZE;
+	canvas.height = PROVISIONAL_CANVAS_SIZE;
 	const gl = (canvas.getContext("webgl2") ||
 		canvas.getContext("webgl")) as WebGL2RenderingContext | null;
 	if (!gl) throw new Error("could not get a webgl2/webgl context");
 
 	const renderer = new spine.SceneRenderer(canvas, gl);
-
-	const atlas = new spine.TextureAtlas(config.atlasText);
-	for (const page of atlas.pages) {
-		const match = config.pages.find((p) => p.name === page.name);
-		if (!match) throw new Error(`atlas page image not provided: ${page.name}`);
-		const image = await loadImage(match.dataUrl);
-		page.setTexture(new spine.GLTexture(gl, image));
-	}
-
-	// an atlas without a pma flag on every page is straight alpha; render it that
-	// way. no pages would default true, so guard the empty case.
-	const premultipliedAlpha = atlas.pages.length > 0 && atlas.pages.every((p) => p.pma);
+	const atlas = await loadAtlas(spine, gl, config);
 
 	const attachmentLoader = new spine.AtlasAttachmentLoader(atlas);
 	const json = new spine.SkeletonJson(attachmentLoader);
@@ -168,7 +80,7 @@ async function createSession(config: SessionConfig): Promise<{ id: number; meta:
 		state,
 		stateData,
 		scale: config.scale,
-		premultipliedAlpha,
+		atlasIsPremultiplied: everyPageIsPremultiplied(atlas),
 	});
 
 	const meta: SessionMeta = {
@@ -185,10 +97,35 @@ async function createSession(config: SessionConfig): Promise<{ id: number; meta:
 	return { id, meta };
 }
 
-// both bundled cores (4.0.28 + 4.2.7) share the pre-physics api: no-arg world
-// transform update and the classic setup-pose/skin method names.
-function updateWorld(s: Session): void {
-	s.skeleton.updateWorldTransform();
+async function loadAtlas(
+	spine: Spine,
+	gl: WebGLRenderingContext,
+	config: SessionConfig,
+): Promise<spine42.TextureAtlas> {
+	const atlas = new spine.TextureAtlas(config.atlasText);
+	for (const page of atlas.pages) {
+		const match = config.pages.find((p) => p.name === page.name);
+		if (!match) throw new Error(`atlas page image not provided: ${page.name}`);
+		const image = await loadImage(match.dataUrl);
+		page.setTexture(new spine.GLTexture(gl, image));
+	}
+	return atlas;
+}
+
+function everyPageIsPremultiplied(atlas: spine42.TextureAtlas): boolean {
+	return atlas.pages.length > 0 && atlas.pages.every((p) => p.pma);
+}
+
+function sessionFor(id: number): Session {
+	const s = sessions.get(id);
+	if (!s) throw new Error(`unknown session ${id}`);
+	return s;
+}
+
+function animationFor(s: Session, name: string): spine42.Animation {
+	const anim = s.skeletonData.findAnimation(name);
+	if (!anim) throw new Error(`animation not found: ${name}`);
+	return anim;
 }
 
 function applySkin(s: Session, skin: string | undefined): void {
@@ -198,56 +135,58 @@ function applySkin(s: Session, skin: string | undefined): void {
 	}
 }
 
-// frame the box, size the canvas, render every requested time, read pixels back.
+function clipRunsPastAnimation(req: ClipTiming, anim: spine42.Animation): boolean {
+	return req.times === undefined && (req.loops > 1 || req.duration > anim.duration);
+}
+
+function clipTimes(req: ClipTiming, anim: spine42.Animation): number[] {
+	return req.times ?? frameTimes(anim.duration, req.duration, req.fps, req.loops);
+}
+
+function poseAfter(s: Session, skin: string | undefined, delta: number): void {
+	s.skeleton.setToSetupPose();
+	applySkin(s, skin);
+	s.state.update(delta);
+	s.state.apply(s.skeleton);
+	s.skeleton.updateWorldTransform();
+}
+
+function forEachPose(
+	s: Session,
+	skin: string | undefined,
+	times: number[],
+	visit: () => void,
+): void {
+	let prev = 0;
+	for (const t of times) {
+		poseAfter(s, skin, t - prev);
+		prev = t;
+		visit();
+	}
+}
+
 async function renderAnimation(id: number, req: RenderRequest): Promise<RenderResult> {
-	const s = sessions.get(id);
-	if (!s) throw new Error(`unknown session ${id}`);
-
-	const anim = s.skeletonData.findAnimation(req.animation);
-	if (!anim) throw new Error(`animation not found: ${req.animation}`);
-
-	// default the pma flag to the atlas; an explicit request value overrides.
-	req.premultipliedAlpha = req.premultipliedAlpha ?? s.premultipliedAlpha;
+	const s = sessionFor(id);
+	const anim = animationFor(s, req.animation);
 
 	applySkin(s, req.skin);
-
-	// loop the track when the clip runs past one animation length (--loops, or an
-	// explicit longer --duration) so extra frames replay instead of freezing.
-	const loop = req.times === undefined && (req.loops > 1 || req.duration > anim.duration);
-
-	// pose at t=0 so bounds/first frame are meaningful
-	s.skeleton.setToSetupPose();
-	s.state.setAnimation(0, req.animation, loop);
-	s.state.update(0);
-	s.state.apply(s.skeleton);
-	updateWorld(s);
+	s.state.setAnimation(0, req.animation, clipRunsPastAnimation(req, anim));
+	poseAfter(s, undefined, 0);
 
 	const box = req.box ?? frameBox(s, req.fit);
 	const size = outputSize(box, req.width, req.height);
 	sizeCanvas(s, size.width, size.height);
-	setCamera(s, box, size.width, size.height);
-
-	const times = req.times ?? frameTimes(anim.duration, req.duration, req.fps, req.loops);
+	containBoxInView(s, box, size.width, size.height);
 
 	const frames: string[] = [];
-	let prev = 0;
-	for (const t of times) {
-		s.skeleton.setToSetupPose();
-		applySkin(s, req.skin);
-		s.state.update(t - prev);
-		prev = t;
-		s.state.apply(s.skeleton);
-		updateWorld(s);
-		isolate(s, req.slots);
+	forEachPose(s, req.skin, clipTimes(req, anim), () => {
+		detachSlotsOutsidePiece(s, req.slots);
 		frames.push(renderFrame(s, size.width, size.height, req));
-	}
-
+	});
 	return { width: size.width, height: size.height, frames };
 }
 
-// detach every slot not in the piece so drawSkeleton skips them. attachments are
-// reset from the setup pose each frame, so this reapplies per frame.
-function isolate(s: Session, slots: string[] | undefined): void {
+function detachSlotsOutsidePiece(s: Session, slots: string[] | undefined): void {
 	if (!slots) return;
 	const keep = new Set(slots);
 	for (const slot of s.skeleton.slots) {
@@ -255,23 +194,16 @@ function isolate(s: Session, slots: string[] | undefined): void {
 	}
 }
 
-// walk the clip once, accumulating a per-frame-union framing box for the whole
-// skeleton and for each piece. no rendering; used to pick aligned boxes.
 async function measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult> {
-	const s = sessions.get(id);
-	if (!s) throw new Error(`unknown session ${id}`);
-
-	const anim = s.skeletonData.findAnimation(req.animation);
-	if (!anim) throw new Error(`animation not found: ${req.animation}`);
+	const s = sessionFor(id);
+	const anim = animationFor(s, req.animation);
 
 	applySkin(s, req.skin);
-	const loop = req.times === undefined && (req.loops > 1 || req.duration > anim.duration);
-	const times = req.times ?? frameTimes(anim.duration, req.duration, req.fps, req.loops);
+	const loop = clipRunsPastAnimation(req, anim);
+	const times = clipTimes(req, anim);
 
-	// measure only the box node's --fit will read: bounds uses the whole-skeleton
-	// union, piece/shared use the per-piece boxes. skip the rest per frame.
-	const needSkeleton = req.fit === "bounds";
-	const needPieces = req.fit === "piece" || req.fit === "shared";
+	const measureWholeSkeleton = req.fit === "bounds";
+	const measureEachPiece = req.fit === "piece" || req.fit === "shared";
 	const pieceSets = req.pieces.map((names) => new Set(names));
 	const perPiece: (Box | null)[] = req.pieces.map(() => null);
 	let skeletonUnion: Box | null = null;
@@ -279,34 +211,13 @@ async function measurePieces(id: number, req: MeasureRequest): Promise<MeasureRe
 	s.skeleton.setToSetupPose();
 	s.state.setAnimation(0, req.animation, loop);
 
-	let prev = 0;
-	for (const t of times) {
-		s.skeleton.setToSetupPose();
-		applySkin(s, req.skin);
-		s.state.update(t - prev);
-		prev = t;
-		s.state.apply(s.skeleton);
-		updateWorld(s);
+	forEachPose(s, req.skin, times, () => {
+		if (measureWholeSkeleton) skeletonUnion = unionBox(skeletonUnion, boundsOf(s));
+		if (measureEachPiece) growPieceBoxes(s, pieceSets, perPiece);
+	});
 
-		if (needSkeleton) skeletonUnion = unionBox(skeletonUnion, boundsOf(s));
-
-		if (needPieces) {
-			const slots = s.skeleton.slots;
-			const saved = slots.map((sl) => sl.getAttachment());
-			for (let i = 0; i < pieceSets.length; i++) {
-				const keep = pieceSets[i];
-				for (let j = 0; j < slots.length; j++) {
-					slots[j].setAttachment(keep.has(slots[j].data.name) ? saved[j] : null);
-				}
-				perPiece[i] = unionBox(perPiece[i], boundsOf(s));
-			}
-			for (let j = 0; j < slots.length; j++) slots[j].setAttachment(saved[j]);
-		}
-	}
-
-	const declared = declaredBox(s);
-	let selectedUnion: Box | null = null;
-	for (const b of perPiece) selectedUnion = unionBox(selectedUnion, b);
+	const declared = declaredBoxScaled(s);
+	const selectedUnion = perPiece.reduce<Box | null>((union, b) => unionBox(union, b), null);
 
 	return {
 		perPiece: perPiece.map((b) => b ?? declared),
@@ -316,7 +227,19 @@ async function measurePieces(id: number, req: MeasureRequest): Promise<MeasureRe
 	};
 }
 
-// current getBounds over whatever slots are attached; null if empty.
+function growPieceBoxes(s: Session, pieceSets: Set<string>[], perPiece: (Box | null)[]): void {
+	const slots = s.skeleton.slots;
+	const saved = slots.map((sl) => sl.getAttachment());
+	for (let i = 0; i < pieceSets.length; i++) {
+		const keep = pieceSets[i];
+		for (let j = 0; j < slots.length; j++) {
+			slots[j].setAttachment(keep.has(slots[j].data.name) ? saved[j] : null);
+		}
+		perPiece[i] = unionBox(perPiece[i], boundsOf(s));
+	}
+	for (let j = 0; j < slots.length; j++) slots[j].setAttachment(saved[j]);
+}
+
 function boundsOf(s: Session): Box | null {
 	const offset = new s.spine.Vector2();
 	const size = new s.spine.Vector2();
@@ -337,8 +260,7 @@ function unionBox(a: Box | null, b: Box | null): Box | null {
 	return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-// declared box stored unscaled; scale into the scaled-geometry space.
-function declaredBox(s: Session): Box {
+function declaredBoxScaled(s: Session): Box {
 	const sd = s.skeletonData;
 	return {
 		x: sd.x * s.scale,
@@ -348,12 +270,12 @@ function declaredBox(s: Session): Box {
 	};
 }
 
-function frameBox(s: Session, fit: RenderRequest["fit"]): Box {
+function frameBox(s: Session, fit: Fit): Box {
 	if (fit === "bounds") {
 		const bounds = boundsOf(s);
 		if (bounds) return bounds;
 	}
-	return declaredBox(s);
+	return declaredBoxScaled(s);
 }
 
 function outputSize(
@@ -387,13 +309,7 @@ function sizeCanvas(s: Session, w: number, h: number): void {
 	s.gl.viewport(0, 0, w, h);
 }
 
-// contain the box in the canvas, centered. equal aspect fills edge to edge.
-function setCamera(
-	s: Session,
-	box: { x: number; y: number; width: number; height: number },
-	w: number,
-	h: number,
-): void {
+function containBoxInView(s: Session, box: Box, w: number, h: number): void {
 	const cam = s.renderer.camera;
 	cam.setViewport(w, h);
 	const zoom = Math.max(box.width / w, box.height / h);
@@ -409,20 +325,17 @@ function renderFrame(s: Session, w: number, h: number, req: RenderRequest): stri
 	gl.clear(gl.COLOR_BUFFER_BIT);
 
 	s.renderer.begin();
-	s.renderer.drawSkeleton(s.skeleton, req.premultipliedAlpha);
+	s.renderer.drawSkeleton(s.skeleton, s.atlasIsPremultiplied);
 	s.renderer.end();
 
 	const buf = new Uint8Array(w * h * 4);
 	gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-	// the framebuffer holds premultiplied rgb; png/apng/gif want straight alpha,
-	// so divide rgb back out or soft edges composite too dark.
-	if (req.premultipliedAlpha) unpremultiply(buf);
-	flipRows(buf, w, h);
+	if (s.atlasIsPremultiplied) toStraightAlpha(buf);
+	flipBottomUpRowsToTopDown(buf, w, h);
 	return toBase64(buf);
 }
 
-// convert premultiplied rgba to straight alpha in place. a=0/255 are no-ops.
-function unpremultiply(buf: Uint8Array): void {
+function toStraightAlpha(buf: Uint8Array): void {
 	for (let i = 0; i < buf.length; i += 4) {
 		const a = buf[i + 3];
 		if (a === 0 || a === 255) continue;
@@ -432,8 +345,7 @@ function unpremultiply(buf: Uint8Array): void {
 	}
 }
 
-// gl readback is bottom-up; flip to top-down in place.
-function flipRows(buf: Uint8Array, w: number, h: number): void {
+function flipBottomUpRowsToTopDown(buf: Uint8Array, w: number, h: number): void {
 	const stride = w * 4;
 	const tmp = new Uint8Array(stride);
 	for (let y = 0; y < Math.floor(h / 2); y++) {
@@ -478,12 +390,7 @@ function disposeSession(id: number): void {
 
 declare global {
 	interface Window {
-		SpineHarness: {
-			createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
-			renderAnimation(id: number, req: RenderRequest): Promise<RenderResult>;
-			measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
-			disposeSession(id: number): void;
-		};
+		SpineHarness: HarnessApi;
 	}
 }
 

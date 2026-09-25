@@ -12,9 +12,11 @@ Operates on Spine runtime exports (`.json` + `.atlas`/`.atlas.txt` + PNG texture
 ## How it works
 
 - **Rendering**: `spine-ts` WebGL backend in headless Chromium (Playwright), screenshotting frames. WebGL for full mesh + clipping fidelity (both common in targets).
-- **Version dispatch**: bundles `spine-ts` 4.0 + 4.2, picks per-skeleton from embedded `"spine"` field (format broke at 4.1; targets straddle it).
-- **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir or glob for batch.
-- **Video** (`mp4`/`webm`): shells out to ffmpeg (detected on PATH). `mp4` defaults white (no alpha); `webm` defaults transparent.
+- **Version dispatch**: bundles `spine-ts` 4.0 + 4.2, picks per-skeleton from embedded `"spine"` field (format broke at 4.1; targets straddle it). 4.1 and 4.2 share a format, so the 4.2 runtime reads both. The runtimes live only in the browser harness bundle, never in the node CLI.
+- **Premultiplied alpha**: detected from the atlas. Pages that all carry the `pma` flag render premultiplied; anything else renders straight, since drawing straight-alpha textures as premultiplied blows additive slots out into boxes. Premultiplied frames are converted back to straight alpha before encoding.
+- **Input resolution**: pass a `.json`; single sibling `*.atlas.txt`/`*.atlas` auto-resolved (`--atlas` overrides); textures relative to atlas dir. Also accepts dir (one level deep) or glob (recursive) for batch; a batch skips skeletons that fail to resolve and reports them.
+- **Video** (`mp4`/`webm`): shells out to ffmpeg (detected on PATH; the ffmpeg Playwright bundles lacks rawvideo input and x264, so it is not used). `mp4` defaults white (no alpha); `webm` defaults transparent. Odd dimensions are padded to even, as both codecs require.
+- **GIF**: gif has 1-bit alpha, so edges against a transparent background are hard; a solid `--background` looks cleaner.
 - **Animated webp**: shells out to `img2webp` (a libwebp tool), not ffmpeg. Every frame is a key frame (`-kmax 0`) so nothing blends across frames and transparency stays exact; ffmpeg's libwebp blends with no disposal control and leaves trails behind moving semi-transparent pixels. Lossless with full alpha by default; pass `--quality 0-100` for a smaller lossy file.
 
 ## Usage

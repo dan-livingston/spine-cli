@@ -2,24 +2,23 @@ import type { Browser } from "playwright-core";
 
 import { chromium } from "playwright-core";
 
-// swiftshader angle keeps webgl working headless without a real gpu.
-const ARGS = ["--use-gl=angle", "--use-angle=swiftshader", "--disable-gpu-sandbox", "--no-sandbox"];
+const SOFTWARE_WEBGL_ARGS = [
+	"--use-gl=angle",
+	"--use-angle=swiftshader",
+	"--disable-gpu-sandbox",
+	"--no-sandbox",
+];
 
-// launch chromium robustly: prefer the system chrome channel (no download needed),
-// then a bundled build, then an explicit system path.
+const LINUX_SYSTEM_CHROME = "/usr/bin/google-chrome";
+
 export async function launchBrowser(): Promise<Browser> {
-	const attempts: (() => Promise<Browser>)[] = [
-		() => chromium.launch({ headless: true, channel: "chrome", args: ARGS }),
-		() => chromium.launch({ headless: true, args: ARGS }),
-		() =>
-			chromium.launch({
-				headless: true,
-				executablePath: "/usr/bin/google-chrome",
-				args: ARGS,
-			}),
-	];
+	const args = SOFTWARE_WEBGL_ARGS;
+	const systemChromeChannel = () => chromium.launch({ headless: true, channel: "chrome", args });
+	const playwrightBundledChromium = () => chromium.launch({ headless: true, args });
+	const linuxSystemChrome = () =>
+		chromium.launch({ headless: true, executablePath: LINUX_SYSTEM_CHROME, args });
 	let lastErr: unknown;
-	for (const attempt of attempts) {
+	for (const attempt of [systemChromeChannel, playwrightBundledChromium, linuxSystemChrome]) {
 		try {
 			return await attempt();
 		} catch (err) {

@@ -23,7 +23,6 @@ export function isFormat(v: string): v is Format {
 	);
 }
 
-// a resolved output target: a file for stills/video, a directory for pngseq.
 export interface OutputTarget {
 	path: string;
 	isDir: boolean;
@@ -33,14 +32,10 @@ export interface OutputContext {
 	jsonPath: string;
 	skeletonName: string;
 	animation: string;
-	// include the animation in the name (batch, or >1 animation selected)
 	includeAnimation: boolean;
-	// piece name, appended when rendering a slot subset
 	piece?: string;
 	format: Format;
-	// single explicit --out (a file, or a dir for pngseq); only when one output
 	out?: string;
-	// --out-dir for batch or explicit placement
 	outDir?: string;
 }
 
