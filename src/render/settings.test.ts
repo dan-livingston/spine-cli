@@ -60,6 +60,36 @@ describe("parseRenderSettings", () => {
 		).toMatchObject({ pieceSpecs: ["head*"], fit: "piece", skin: "gold", dryRun: true });
 	});
 
+	it("parses the sheet grid and padding", () => {
+		expect(parseRenderSettings({ format: "png", sheet: true }).sheet).toEqual({ padding: 0 });
+		expect(
+			parseRenderSettings({ format: "png", sheet: true, rows: "2.4", padding: "3" }).sheet,
+		).toEqual({ rows: 2, padding: 3 });
+		expect(
+			parseRenderSettings({ format: "webp", sheet: true, columns: "8", quality: "90" }),
+		).toMatchObject({ sheet: { columns: 8, padding: 0 }, lossyQuality: 90 });
+	});
+
+	it.each([
+		[{ format: "png", sheet: true, rows: "0" }, "--rows must be >= 1"],
+		[{ format: "png", sheet: true, columns: "x" }, '--columns must be a number, got "x"'],
+		[{ format: "png", sheet: true, padding: "-1" }, "--padding must be >= 0"],
+		[
+			{ format: "png", sheet: true, rows: "2", columns: "3" },
+			"pass --rows or --columns, not both",
+		],
+		[
+			{ format: "png", sheet: true, frame: "0.5" },
+			"--frame picks a single still; --sheet renders every frame",
+		],
+		[{ format: "png", sheet: true, loops: "2" }, "--loops does not apply to --sheet"],
+		[{ format: "png", rows: "2" }, "--rows only applies with --sheet"],
+		[{ format: "png", columns: "2" }, "--columns only applies with --sheet"],
+		[{ format: "png", padding: "2" }, "--padding only applies with --sheet"],
+	])("rejects sheet flags %o", (options, message) => {
+		expect(() => parseRenderSettings(options)).toThrow(message);
+	});
+
 	it.each([
 		[{ fps: "fast" }, '--fps must be a number, got "fast"'],
 		[{ fps: "0.5" }, "--fps must be >= 1"],

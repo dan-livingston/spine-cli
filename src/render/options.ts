@@ -73,16 +73,37 @@ export function parseWebpLossyQuality(
 	return parseOptionalNumber(value, "quality", { min: 0, max: 100, integer: true });
 }
 
+const SHEET_ONLY = ["rows", "columns", "padding"] as const;
+
 export function parseSheet(options: SheetOptions, format: Format): SheetParams | undefined {
-	if (!options.sheet) return undefined;
-	if (!formatSpec(format).sheet) {
-		const sheets = listOf(
-			formatsWhere((spec) => spec.sheet !== undefined),
-			"and",
-		);
-		throw new Error(`--sheet only applies to ${sheets}; ${format} cannot write a sheet`);
+	if (!options.sheet) {
+		const given = SHEET_ONLY.find((name) => options[name] !== undefined);
+		if (given) throw new Error(`--${given} only applies with --sheet`);
+		return undefined;
 	}
-	return { padding: 0 };
+	assertSheetFormat(format);
+	if (options.frame !== undefined) {
+		throw new Error("--frame picks a single still; --sheet renders every frame");
+	}
+	if (options.loops !== undefined) throw new Error("--loops does not apply to --sheet");
+	if (options.rows !== undefined && options.columns !== undefined) {
+		throw new Error("pass --rows or --columns, not both");
+	}
+	const count = { min: 1, integer: true };
+	return {
+		rows: parseOptionalNumber(options.rows, "rows", count),
+		columns: parseOptionalNumber(options.columns, "columns", count),
+		padding: parseNumber(options.padding, "padding", 0, { min: 0, integer: true }),
+	};
+}
+
+function assertSheetFormat(format: Format): void {
+	if (formatSpec(format).sheet) return;
+	const sheets = listOf(
+		formatsWhere((spec) => spec.sheet !== undefined),
+		"and",
+	);
+	throw new Error(`--sheet only applies to ${sheets}; ${format} cannot write a sheet`);
 }
 
 const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };
@@ -102,6 +123,11 @@ export function parseBackground(value: string | undefined, format: Format): Rgba
 
 export interface SheetOptions {
 	sheet?: boolean;
+	rows?: string;
+	columns?: string;
+	padding?: string;
+	frame?: string;
+	loops?: string;
 }
 
 export interface RenderOptions extends SheetOptions {
@@ -117,8 +143,6 @@ export interface RenderOptions extends SheetOptions {
 	fit?: string;
 	skin?: string;
 	duration?: string;
-	loops?: string;
-	frame?: string;
 	background?: string;
 	quality?: string;
 	piece?: string[];

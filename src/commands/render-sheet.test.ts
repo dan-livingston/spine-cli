@@ -96,4 +96,17 @@ describe("renderCommand --sheet", () => {
 		]);
 		expect(files.writes).toEqual([]);
 	});
+
+	it("lays frames out in the requested rows with padding between cells", async () => {
+		const { env, files } = clipEnv(3, 2, 5);
+		await renderCommand(env, TARGET, { format: "png", sheet: true, rows: "2", padding: "1" });
+
+		const png = await readPng(files.bytes("/proj/hero_idle.png"));
+		expect({ width: png.width, height: png.height }).toEqual({ width: 11, height: 5 });
+		const sidecar = JSON.parse(
+			new TextDecoder().decode(files.bytes("/proj/hero_idle.sheet.json")),
+		);
+		expect(sidecar).toMatchObject({ columns: 3, rows: 2, padding: 1 });
+		expect(sidecar.frames.at(-1)).toEqual({ x: 4, y: 3, w: 3, h: 2 });
+	});
 });
