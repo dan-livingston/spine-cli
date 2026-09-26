@@ -55,7 +55,7 @@ describe("encodeGif", () => {
 		expect(shown[1]).toEqual([CLEAR, BLUE]);
 	});
 
-	it.fails("needs fix: an opaque frame is never disposed, so it shows through the transparent pixels of the next frame", () => {
+	it("clears an opaque frame too, so it does not show through the next frame", () => {
 		const opaque = solidFrame(2, 1, RED);
 		const partly = frameOf(2, 1, [CLEAR, BLUE]);
 		const shown = composeGif(parseGif(encodeGif([opaque, partly], 30)));

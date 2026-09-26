@@ -24,7 +24,7 @@ export function encodeGif(frames: Frame[], fps: number): Uint8Array {
 			delay,
 			transparent: transparentIndex >= 0,
 			transparentIndex: transparentIndex >= 0 ? transparentIndex : undefined,
-			dispose: transparentIndex >= 0 ? RESTORE_TO_BACKGROUND : undefined,
+			dispose: RESTORE_TO_BACKGROUND,
 		});
 	}
 
