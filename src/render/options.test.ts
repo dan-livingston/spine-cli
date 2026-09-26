@@ -89,11 +89,11 @@ describe("parseNumber", () => {
 		expect(parseNumber("0.01", "scale", 1, { min: 0, exclusiveMin: true })).toBe(0.01);
 	});
 
-	it.fails("needs fix: a blank value is read as 0 instead of rejected as not a number", () => {
+	it("rejects a blank value as not a number", () => {
 		expect(() => parseNumber("  ", "frame", 0, { min: 0 })).toThrow("--frame must be a number");
 	});
 
-	it.fails("needs fix: an empty value is read as 0 instead of rejected as not a number", () => {
+	it("rejects an empty value as not a number", () => {
 		expect(() => parseNumber("", "frame", 0, { min: 0 })).toThrow("--frame must be a number");
 	});
 });

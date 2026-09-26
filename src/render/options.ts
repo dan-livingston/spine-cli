@@ -36,7 +36,7 @@ export function parseNumber(
 	bounds: NumberBounds,
 ): number {
 	if (value === undefined) return fallback;
-	const n = Number(value);
+	const n = value.trim() === "" ? Number.NaN : Number(value);
 	if (!Number.isFinite(n)) throw new Error(`--${name} must be a number, got "${value}"`);
 	if (bounds.min !== undefined) {
 		if (bounds.exclusiveMin ? n <= bounds.min : n < bounds.min) {

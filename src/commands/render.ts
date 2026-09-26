@@ -32,15 +32,18 @@ export async function renderCommand(
 	const loops = Math.round(parseNumber(options.loops, "loops", 1, { min: 1 }));
 	const frame = parseNumber(options.frame, "frame", 0, { min: 0 });
 	const concurrency = Math.round(parseNumber(options.concurrency, "concurrency", 1, { min: 1 }));
-	const width = options.width
-		? Math.round(parseNumber(options.width, "width", 0, { min: 1 }))
-		: undefined;
-	const height = options.height
-		? Math.round(parseNumber(options.height, "height", 0, { min: 1 }))
-		: undefined;
-	const duration = options.duration
-		? parseNumber(options.duration, "duration", 0, { min: 0, exclusiveMin: true })
-		: undefined;
+	const width =
+		options.width !== undefined
+			? Math.round(parseNumber(options.width, "width", 0, { min: 1 }))
+			: undefined;
+	const height =
+		options.height !== undefined
+			? Math.round(parseNumber(options.height, "height", 0, { min: 1 }))
+			: undefined;
+	const duration =
+		options.duration !== undefined
+			? parseNumber(options.duration, "duration", 0, { min: 0, exclusiveMin: true })
+			: undefined;
 	const pieceSpecs = options.piece ?? [];
 	const fit = parseFit(options.fit, pieceSpecs.length > 0);
 	const background = parseBackground(options.background, format);
