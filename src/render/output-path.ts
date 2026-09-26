@@ -1,27 +1,8 @@
 import { dirname, join } from "node:path";
 
-export type Format = "pngseq" | "png" | "gif" | "apng" | "mp4" | "webm" | "webp";
+import type { Format } from "#/render/formats.ts";
 
-const EXT: Record<Exclude<Format, "pngseq">, string> = {
-	png: ".png",
-	apng: ".apng",
-	gif: ".gif",
-	mp4: ".mp4",
-	webm: ".webm",
-	webp: ".webp",
-};
-
-export function isFormat(v: string): v is Format {
-	return (
-		v === "pngseq" ||
-		v === "png" ||
-		v === "gif" ||
-		v === "apng" ||
-		v === "mp4" ||
-		v === "webm" ||
-		v === "webp"
-	);
-}
+import { formatSpec } from "#/render/formats.ts";
 
 export interface OutputTarget {
 	path: string;
@@ -39,16 +20,17 @@ export interface OutputContext {
 }
 
 export function planOutput(ctx: OutputContext): OutputTarget {
+	const { extension } = formatSpec(ctx.format);
 	if (ctx.out) {
-		return { path: ctx.out, isDir: ctx.format === "pngseq" };
+		return { path: ctx.out, isDir: extension === undefined };
 	}
 	const dir = ctx.outDir ?? dirname(ctx.jsonPath);
 	let base = `${ctx.skeletonName}_${flattenFolders(ctx.animation)}`;
 	if (ctx.piece) base += `_${ctx.piece}`;
-	if (ctx.format === "pngseq") {
+	if (extension === undefined) {
 		return { path: join(dir, base), isDir: true };
 	}
-	return { path: join(dir, base + EXT[ctx.format]), isDir: false };
+	return { path: join(dir, base + extension), isDir: false };
 }
 
 function flattenFolders(name: string): string {

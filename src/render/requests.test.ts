@@ -13,8 +13,6 @@ const params = (over: Partial<RunParams> = {}): RunParams => ({
 	fit: "declared",
 	background: { r: 0, g: 0, b: 0, a: 0 },
 	format: "gif",
-	ffmpeg: null,
-	img2webp: null,
 	...over,
 });
 

@@ -1,4 +1,4 @@
-import type { Format } from "#/render/output-path.ts";
+import type { Format } from "#/render/formats.ts";
 import type { Piece } from "#/render/pieces.ts";
 import type { ResolvedInput } from "#/types.ts";
 

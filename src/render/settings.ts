@@ -11,7 +11,7 @@ import {
 } from "#/render/options.ts";
 import { assertDistinctPieceNames } from "#/render/pieces.ts";
 
-export type RenderSettings = Omit<RunParams, "ffmpeg" | "img2webp"> & {
+export type RenderSettings = RunParams & {
 	concurrency: number;
 	pieceSpecs: string[];
 	dryRun: boolean;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { OutputContext } from "#/render/output-path.ts";
 
-import { isFormat, planOutput } from "#/render/output-path.ts";
+import { planOutput } from "#/render/output-path.ts";
 
 const chars = join("/proj", "chars");
 
@@ -13,17 +13,6 @@ const base: OutputContext = {
 	animation: "run",
 	format: "gif",
 };
-
-describe("isFormat", () => {
-	it("accepts the documented formats and nothing else", () => {
-		for (const f of ["pngseq", "png", "gif", "apng", "mp4", "webm", "webp"]) {
-			expect(isFormat(f)).toBe(true);
-		}
-		for (const f of ["jpg", "GIF", "", "seq"]) {
-			expect(isFormat(f)).toBe(false);
-		}
-	});
-});
 
 describe("planOutput", () => {
 	it("writes beside the skeleton, named after it and the animation, with the extension of the format", () => {

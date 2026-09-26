@@ -1,13 +1,13 @@
+import type { Format } from "#/render/formats.ts";
 import type { Fit, Rgba } from "#/render/harness/contract.ts";
-import type { Format } from "#/render/output-path.ts";
 
 import { parseColor, TRANSPARENT } from "#/render/color.ts";
-import { isFormat } from "#/render/output-path.ts";
+import { FORMAT_NAMES, formatSpec, formatsWhere, isFormat, listOf } from "#/render/formats.ts";
 
 export function parseFormat(value: string | undefined): Format {
 	if (value === undefined) return "pngseq";
 	if (!isFormat(value)) {
-		throw new Error(`unknown format "${value}"; use pngseq, png, gif, apng, mp4, webm or webp`);
+		throw new Error(`unknown format "${value}"; use ${listOf(FORMAT_NAMES, "or")}`);
 	}
 	return value;
 }
@@ -62,8 +62,12 @@ export function parseWebpLossyQuality(
 	value: string | undefined,
 	format: Format,
 ): number | undefined {
-	if (value !== undefined && format !== "webp") {
-		throw new Error(`--quality only applies to webp; ${format} has no lossy quality knob`);
+	if (value !== undefined && !formatSpec(format).lossyQuality) {
+		const lossy = listOf(
+			formatsWhere((spec) => spec.lossyQuality),
+			"and",
+		);
+		throw new Error(`--quality only applies to ${lossy}; ${format} has no lossy quality knob`);
 	}
 	return parseOptionalNumber(value, "quality", { min: 0, max: 100, integer: true });
 }
@@ -71,13 +75,13 @@ export function parseWebpLossyQuality(
 const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };
 
 export function parseBackground(value: string | undefined, format: Format): Rgba {
-	const formatHasAlpha = format !== "mp4";
-	if (value === undefined) return { ...(formatHasAlpha ? TRANSPARENT : OPAQUE_WHITE) };
+	const { alpha } = formatSpec(format);
+	if (value === undefined) return { ...(alpha === true ? TRANSPARENT : OPAQUE_WHITE) };
 	const color = parseColor(value);
 	if (!color) throw new Error(`unrecognized color "${value}"`);
-	if (!formatHasAlpha && color.a < 1) {
+	if (alpha !== true && color.a < 1) {
 		throw new Error(
-			`mp4 has no alpha channel; --background must be opaque (got "${value}"); use webm for transparency`,
+			`${format} has no alpha channel; --background must be opaque (got "${value}"); use ${alpha.instead} for transparency`,
 		);
 	}
 	return color;

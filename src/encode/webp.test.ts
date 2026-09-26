@@ -2,11 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Rgba } from "#/test/encode-fixtures.ts";
 
-import { encodeWebp, findImg2webp } from "#/encode/webp.ts";
+import { encodeWebp } from "#/encode/webp.ts";
 import { BLUE, CLEAR, RED, frameOf, pixelsOf, solidFrame } from "#/test/encode-fixtures.ts";
 import { readPng } from "#/test/encode-png-reader.ts";
 import { fakeEnv } from "#/test/fake-env.ts";
-import { FakeProcesses } from "#/test/fake-processes.ts";
 
 function setup() {
 	const fake = fakeEnv({ files: { dirs: ["/out"] }, processes: { installed: ["img2webp"] } });
@@ -36,13 +35,6 @@ const clip = [
 	solidFrame(2, 2, BLUE),
 	solidFrame(2, 2, RED),
 ];
-
-describe("findImg2webp", () => {
-	it("finds img2webp only when it answers", async () => {
-		expect(await findImg2webp(new FakeProcesses({ installed: ["img2webp"] }))).toBe("img2webp");
-		expect(await findImg2webp(new FakeProcesses())).toBeNull();
-	});
-});
 
 describe("encodeWebp", () => {
 	it("rejects an empty clip without touching disk", async () => {

@@ -1,18 +1,18 @@
-import type { Env, Io } from "#/ports/env.ts";
+import type { Env } from "#/ports/env.ts";
 import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
+import type { ClipWriter } from "#/render/clip-writer.ts";
 import type { MeasureResult } from "#/render/harness/contract.ts";
 import type { RenderOptions } from "#/render/options.ts";
 import type { Piece } from "#/render/pieces.ts";
 import type { Job } from "#/render/plan.ts";
 import type { RunParams } from "#/render/requests.ts";
 
-import { findExternalEncoders } from "#/encode/external.ts";
 import { resolveInputs } from "#/input/resolve.ts";
+import { openClipWriter } from "#/render/clip-writer.ts";
 import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
 import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
 import { sessionConfig } from "#/render/session-config.ts";
 import { parseRenderSettings } from "#/render/settings.ts";
-import { writeClip } from "#/render/write-clip.ts";
 
 export async function renderCommand(
 	env: Env,
@@ -46,13 +46,13 @@ export async function renderCommand(
 		return;
 	}
 
-	const encoders = await findExternalEncoders(env.processes, settings.format);
+	const write = await openClipWriter(env, settings);
 	const pool = await env.launchRenderPool();
 	try {
 		const jobsBySkeleton = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
 		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
-			...settings,
-			...encoders,
+			params: settings,
+			write,
 		});
 	} finally {
 		await pool.close();
@@ -75,43 +75,44 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 	return groups;
 }
 
+interface Run {
+	params: RunParams;
+	write: ClipWriter;
+}
+
 async function runJobs(
 	env: Env,
 	pool: RenderPool,
 	groups: Job[][],
 	workers: number,
-	params: RunParams,
+	run: Run,
 ): Promise<void> {
 	let next = 0;
 	const take = (): Job[] | undefined => (next < groups.length ? groups[next++] : undefined);
 
-	const run = async (): Promise<void> => {
+	const drain = async (): Promise<void> => {
 		const worker = await pool.worker();
 		for (let group = take(); group; group = take()) {
-			await renderGroup(env, worker, group, params);
+			await renderGroup(env, worker, group, run);
 		}
 	};
 
-	await Promise.all(Array.from({ length: Math.max(1, workers) }, run));
+	await Promise.all(Array.from({ length: Math.max(1, workers) }, drain));
 }
 
-async function renderGroup(
-	env: Env,
-	worker: RenderWorker,
-	group: Job[],
-	params: RunParams,
-): Promise<void> {
+async function renderGroup(env: Env, worker: RenderWorker, group: Job[], run: Run): Promise<void> {
 	const input = group[0].input;
-	const { id } = await worker.createSession(await sessionConfig(env.files, input, params.scale));
+	const { id } = await worker.createSession(
+		await sessionConfig(env.files, input, run.params.scale),
+	);
 	try {
 		for (const [animation, jobs] of groupBy(group, (j) => j.animation)) {
 			if (jobs[0].piece) {
-				await renderAlignedPieces(env, worker, id, animation, jobs, params);
+				await renderAlignedPieces(worker, id, animation, jobs, run);
 			} else {
 				for (const job of jobs) {
-					const clip = await worker.render(id, buildRequest(animation, params));
-					await writeClip(env, job, clip, params);
-					logWrote(job, clip);
+					const clip = await worker.render(id, buildRequest(animation, run.params));
+					await writeAndLog(run, job, clip);
 				}
 			}
 		}
@@ -121,23 +122,28 @@ async function renderGroup(
 }
 
 async function renderAlignedPieces(
-	io: Io,
 	worker: RenderWorker,
 	id: number,
 	animation: string,
 	jobs: Job[],
-	params: RunParams,
+	run: Run,
 ): Promise<void> {
+	const { params } = run;
 	const boxes = await measureFramingBoxes(worker, id, animation, jobs, params);
 	for (let i = 0; i < jobs.length; i++) {
 		const job = jobs[i];
 		const req = buildRequest(animation, params);
 		req.slots = piece(job).slots;
 		if (boxes) req.box = pickBox(params.fit, boxes, i);
-		const clip = await worker.render(id, req);
-		await writeClip(io, job, clip, params);
-		logWrote(job, clip);
+		await writeAndLog(run, job, await worker.render(id, req));
 	}
+}
+
+async function writeAndLog(run: Run, job: Job, clip: Clip): Promise<void> {
+	await run.write(job.target, clip);
+	console.log(
+		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
+	);
 }
 
 async function measureFramingBoxes(
@@ -155,10 +161,4 @@ async function measureFramingBoxes(
 function piece(job: Job): Piece {
 	if (!job.piece) throw new Error(`internal: job for ${job.target.path} has no piece`);
 	return job.piece;
-}
-
-function logWrote(job: Job, clip: Clip): void {
-	console.log(
-		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
-	);
 }

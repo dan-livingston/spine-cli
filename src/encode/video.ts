@@ -4,10 +4,6 @@ import type { Rgba } from "#/render/harness/contract.ts";
 
 export type VideoFormat = "mp4" | "webm";
 
-export async function findFfmpeg(processes: Processes): Promise<string | null> {
-	return (await processes.answersVersion("ffmpeg")) ? "ffmpeg" : null;
-}
-
 const CODEC_ARGS: Record<VideoFormat, string[]> = {
 	mp4: ["-c:v", "libx264", "-pix_fmt", "yuv420p"],
 	webm: ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p"],

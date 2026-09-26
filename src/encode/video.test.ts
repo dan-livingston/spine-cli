@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { VideoFormat, VideoOptions } from "#/encode/video.ts";
 import type { Rgba } from "#/render/harness/contract.ts";
 
-import { encodeVideo, findFfmpeg } from "#/encode/video.ts";
+import { encodeVideo } from "#/encode/video.ts";
 import { BLUE, RED, solidFrame } from "#/test/encode-fixtures.ts";
 import { FakeProcesses } from "#/test/fake-processes.ts";
 
@@ -20,13 +20,6 @@ const TRANSPARENT = { r: 0, g: 0, b: 0, a: 0 };
 function options(fps: number, format: VideoFormat, background: Rgba = TRANSPARENT): VideoOptions {
 	return { fps, format, background };
 }
-
-describe("findFfmpeg", () => {
-	it("finds ffmpeg only when it answers", async () => {
-		expect(await findFfmpeg(installed())).toBe("ffmpeg");
-		expect(await findFfmpeg(new FakeProcesses())).toBeNull();
-	});
-});
 
 describe("encodeVideo", () => {
 	it("rejects an empty clip without running ffmpeg", async () => {

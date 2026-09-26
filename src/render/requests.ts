@@ -1,3 +1,4 @@
+import type { Format } from "#/render/formats.ts";
 import type {
 	Box,
 	ClipTiming,
@@ -7,7 +8,8 @@ import type {
 	RenderRequest,
 	Rgba,
 } from "#/render/harness/contract.ts";
-import type { Format } from "#/render/output-path.ts";
+
+import { formatSpec } from "#/render/formats.ts";
 
 export interface RunParams {
 	scale: number;
@@ -22,8 +24,6 @@ export interface RunParams {
 	background: Rgba;
 	format: Format;
 	lossyQuality?: number;
-	ffmpeg: string | null;
-	img2webp: string | null;
 }
 
 export function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
@@ -34,7 +34,7 @@ export function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
 }
 
 function clipTiming(animation: string, params: RunParams): ClipTiming {
-	const isSingleStill = params.format === "png";
+	const isSingleStill = formatSpec(params.format).still;
 	return {
 		animation,
 		skin: params.skin,

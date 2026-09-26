@@ -3,13 +3,8 @@ import { join } from "node:path";
 import type { Frame } from "#/encode/png.ts";
 import type { Io } from "#/ports/env.ts";
 import type { Files } from "#/ports/files.ts";
-import type { Processes } from "#/ports/processes.ts";
 
 import { encodePng, sequenceFileName } from "#/encode/png.ts";
-
-export async function findImg2webp(processes: Processes): Promise<string | null> {
-	return (await processes.answersVersion("img2webp")) ? "img2webp" : null;
-}
 
 const LOOP_FOREVER = ["-loop", "0"];
 
