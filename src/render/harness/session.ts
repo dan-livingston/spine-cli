@@ -1,7 +1,7 @@
 import * as spine40 from "spine-webgl-40";
 import * as spine42 from "spine-webgl-42";
 
-import type { RenderRequest, SessionConfig, SessionMeta } from "#/render/harness/contract.ts";
+import type { RenderRequest, SessionConfig } from "#/render/harness/contract.ts";
 import type { SpineMajor } from "#/types.ts";
 
 export type Spine = typeof spine42;
@@ -47,9 +47,7 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
 	});
 }
 
-export async function createSession(
-	config: SessionConfig,
-): Promise<{ id: number; meta: SessionMeta }> {
+export async function createSession(config: SessionConfig): Promise<{ id: number }> {
 	const spine = pickSpine(config.major);
 
 	const canvas = document.createElement("canvas");
@@ -84,18 +82,7 @@ export async function createSession(
 		atlasIsPremultiplied: everyPageIsPremultiplied(atlas),
 	});
 
-	const meta: SessionMeta = {
-		animations: skeletonData.animations.map((a) => ({ name: a.name, duration: a.duration })),
-		skins: skeletonData.skins.map((s) => s.name),
-		slots: skeletonData.slots.map((sl) => sl.name),
-		declared: {
-			x: skeletonData.x,
-			y: skeletonData.y,
-			width: skeletonData.width,
-			height: skeletonData.height,
-		},
-	};
-	return { id, meta };
+	return { id };
 }
 
 async function loadAtlas(

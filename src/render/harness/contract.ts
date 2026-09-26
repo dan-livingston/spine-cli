@@ -24,18 +24,6 @@ export interface SessionConfig {
 	scale: number;
 }
 
-export interface AnimationMeta {
-	name: string;
-	duration: number;
-}
-
-export interface SessionMeta {
-	animations: AnimationMeta[];
-	skins: string[];
-	slots: string[];
-	declared: Box;
-}
-
 export interface ClipTiming {
 	animation: string;
 	skin?: string;
@@ -72,7 +60,7 @@ export interface ClipInfo {
 }
 
 export interface HarnessApi {
-	createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
+	createSession(config: SessionConfig): Promise<{ id: number }>;
 	startClip(id: number, req: RenderRequest): Promise<ClipInfo>;
 	nextFrames(id: number, maxFrames: number): Promise<string[]>;
 	measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;

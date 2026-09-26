@@ -36,11 +36,11 @@ export function planJobs(inputs: ResolvedInput[], plan: JobPlan): Job[] {
 
 function planSkeletonJobs(input: ResolvedInput, plan: JobPlan): Job[] {
 	assertTexturesExist(input);
-	const names = readAnimationAndSlotNames(input);
-	const animations = selectAnimations(names.animations, plan.animation);
+	const { skeleton } = input;
+	const animations = selectAnimations(skeleton.animations, plan.animation);
 	const pieces: (Piece | undefined)[] =
 		plan.pieceSpecs.length > 0
-			? resolvePieces(input, names.slots, plan.pieceSpecs, (spec) => {
+			? resolvePieces(input, skeleton.slots, plan.pieceSpecs, (spec) => {
 					const reason = `--piece "${spec}" matched no slots`;
 					if (!plan.batch) throw new Error(reason);
 					console.warn(`skip ${input.jsonPath}: ${reason}`);
@@ -84,27 +84,6 @@ export function assertNoOutputCollisions(jobs: Job[]): void {
 		}
 		byPath.set(job.target.path, job.input.jsonPath);
 	}
-}
-
-interface SkeletonNames {
-	animations: string[];
-	slots: string[];
-}
-
-function readAnimationAndSlotNames(input: ResolvedInput): SkeletonNames {
-	const data = JSON.parse(input.jsonText) as {
-		animations?: Record<string, unknown>;
-		slots?: { name: string }[] | Record<string, unknown>;
-	};
-	const slots = data.slots;
-	return {
-		animations: Object.keys(data.animations ?? {}),
-		slots: Array.isArray(slots)
-			? slots.map((s) => s.name)
-			: slots && typeof slots === "object"
-				? Object.keys(slots)
-				: [],
-	};
 }
 
 function selectAnimations(names: string[], requested: string | undefined): string[] {

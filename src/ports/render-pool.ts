@@ -3,7 +3,6 @@ import type {
 	MeasureResult,
 	RenderRequest,
 	SessionConfig,
-	SessionMeta,
 } from "#/render/harness/contract.ts";
 
 export interface Clip {
@@ -13,7 +12,7 @@ export interface Clip {
 }
 
 export interface RenderWorker {
-	createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
+	createSession(config: SessionConfig): Promise<{ id: number }>;
 	render(id: number, req: RenderRequest): Promise<Clip>;
 	measure(id: number, req: MeasureRequest): Promise<MeasureResult>;
 	dispose(id: number): Promise<void>;

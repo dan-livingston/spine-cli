@@ -141,7 +141,7 @@ describe("FakeProcesses", () => {
 
 describe("FakeRenderPool", () => {
 	it("scripts sessions, renders and measures while recording calls", async () => {
-		const pool = new FakeRenderPool({ meta: { slots: ["body", "head"] } });
+		const pool = new FakeRenderPool();
 		const worker = await pool.worker();
 		const config = {
 			major: "4.2" as const,
@@ -150,8 +150,7 @@ describe("FakeRenderPool", () => {
 			pages: [],
 			scale: 1,
 		};
-		const { id, meta } = await worker.createSession(config);
-		expect(meta.slots).toEqual(["body", "head"]);
+		const { id } = await worker.createSession(config);
 		const clip = await worker.render(id, { ...timing, background, width: 3, height: 1 });
 		expect(clip).toEqual(solidClip(3, 1));
 		const measured = await worker.measure(id, { ...timing, pieces: [["body"], ["head"]] });

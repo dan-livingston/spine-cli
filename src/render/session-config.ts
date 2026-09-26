@@ -12,7 +12,7 @@ export async function sessionConfig(
 		pages.push({ name: page.name, dataUrl: await textureDataUrl(files, page) });
 	}
 	return {
-		major: input.major,
+		major: input.skeleton.major,
 		jsonText: input.jsonText,
 		atlasText: input.atlasText,
 		pages,
@@ -21,9 +21,6 @@ export async function sessionConfig(
 }
 
 async function textureDataUrl(files: Files, page: AtlasPage): Promise<string> {
-	if (!page.textureExists) {
-		throw new Error(`atlas texture missing on disk: ${page.texturePath}`);
-	}
 	const bytes = await files.readBytes(page.texturePath);
 	return `data:${mime(page.name)};base64,${Buffer.from(bytes).toString("base64")}`;
 }

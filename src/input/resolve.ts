@@ -4,7 +4,7 @@ import type { Files } from "#/ports/files.ts";
 import type { AtlasPage, AtlasPageLayout, ResolvedInput } from "#/types.ts";
 
 import { parseAtlas } from "#/spine/atlas.ts";
-import { majorFor, readSpineVersion } from "#/spine/version.ts";
+import { parseSkeleton } from "#/spine/skeleton.ts";
 
 const ATLAS_EXTS = [".atlas.txt", ".atlas"];
 
@@ -24,7 +24,7 @@ export async function resolveInput(
 		: await findAtlas(files, abs, skeletonName);
 	const atlasText = await readText(files, atlasPath, "atlas");
 
-	const version = readSpineVersion(jsonText);
+	const skeleton = parseSkeleton(jsonText);
 	const pages = await checkTextures(files, parseAtlas(atlasText, dirname(atlasPath)));
 
 	return {
@@ -34,8 +34,7 @@ export async function resolveInput(
 		atlasPath,
 		atlasText,
 		atlas: { pages },
-		version,
-		major: majorFor(version),
+		skeleton,
 	};
 }
 

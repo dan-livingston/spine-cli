@@ -47,8 +47,7 @@ describe("resolveInput", () => {
 			jsonPath: resolve("/proj/hero.json"),
 			skeletonName: "hero",
 			atlasPath: resolve("/proj/hero.atlas"),
-			version: "4.2.43",
-			major: "4.2",
+			skeleton: { version: "4.2.43", major: "4.2" },
 			jsonText: skeleton(),
 			atlasText: atlas(),
 		});
@@ -83,8 +82,8 @@ describe("resolveInput", () => {
 				"/b/mid.atlas": atlas(),
 			},
 		});
-		expect((await resolveInput(files, "/a/old.json")).major).toBe("4.0");
-		expect((await resolveInput(files, "/b/mid.json")).major).toBe("4.2");
+		expect((await resolveInput(files, "/a/old.json")).skeleton.major).toBe("4.0");
+		expect((await resolveInput(files, "/b/mid.json")).skeleton.major).toBe("4.2");
 	});
 
 	it("accepts a same-named .atlas.txt", async () => {

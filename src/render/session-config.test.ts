@@ -4,6 +4,7 @@ import type { AtlasPage, ResolvedInput } from "#/types.ts";
 
 import { sessionConfig } from "#/render/session-config.ts";
 import { FakeFiles } from "#/test/fake-files.ts";
+import { skeletonModel } from "#/test/render-plan-fixtures.ts";
 
 const page = (name: string, textureExists = true): AtlasPage => ({
 	name,
@@ -21,8 +22,7 @@ const input = (pages: AtlasPage[]): ResolvedInput => ({
 	atlasPath: "/proj/hero.atlas",
 	atlasText: "hero.png\nsize: 4,4\n",
 	atlas: { pages },
-	version: "4.2.11",
-	major: "4.2",
+	skeleton: skeletonModel(),
 });
 
 const decode = (dataUrl: string): { mime: string; bytes: number[] } => {
@@ -69,13 +69,6 @@ describe("sessionConfig", () => {
 	it("builds a config with no pages for an atlas with no pages", async () => {
 		const config = await sessionConfig(new FakeFiles(), input([]), 1);
 		expect(config.pages).toEqual([]);
-	});
-
-	it("names the missing texture path when a page's texture is absent", async () => {
-		const files = new FakeFiles({ files: { "/proj/hero.png": new Uint8Array([1]) } });
-		await expect(
-			sessionConfig(files, input([page("hero.png"), page("gone.png", false)]), 1),
-		).rejects.toThrow("atlas texture missing on disk: /proj/gone.png");
 	});
 
 	it("surfaces a read failure when the texture vanished after resolving", async () => {

@@ -17,7 +17,7 @@ export async function infoCommand(
 	options: InfoOptions,
 ): Promise<void> {
 	const input = await resolveInput(files, skeleton, options.atlas);
-	const info = parseSkeletonInfo(input.jsonText);
+	const info = parseSkeletonInfo(input.skeleton);
 
 	if (options.json) {
 		console.log(JSON.stringify(buildJson(input, info), null, 2));
@@ -29,8 +29,8 @@ export async function infoCommand(
 function buildJson(input: ResolvedInput, info: ReturnType<typeof parseSkeletonInfo>) {
 	return {
 		name: input.skeletonName,
-		version: input.version,
-		major: input.major,
+		version: input.skeleton.version,
+		major: input.skeleton.major,
 		size: { width: info.width, height: info.height },
 		bones: info.bones,
 		slots: info.slots,
@@ -62,7 +62,7 @@ function renderText(
 ): string {
 	const lines: string[] = [];
 
-	lines.push(`${input.skeletonName}  (spine ${input.version})`);
+	lines.push(`${input.skeletonName}  (spine ${input.skeleton.version})`);
 
 	lines.push(...animationLines(info.animations, verbose));
 

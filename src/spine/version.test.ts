@@ -1,47 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { majorFor, readSpineVersion } from "#/spine/version.ts";
-
-describe("readSpineVersion", () => {
-	it("reads the version from the skeleton header", () => {
-		const json = JSON.stringify({
-			skeleton: { hash: "x", spine: "4.2.43", width: 10 },
-			bones: [],
-		});
-		expect(readSpineVersion(json)).toBe("4.2.43");
-	});
-
-	it("falls back to a top-level spine field", () => {
-		expect(readSpineVersion(JSON.stringify({ spine: "4.0.64" }))).toBe("4.0.64");
-		expect(readSpineVersion(JSON.stringify({ skeleton: {}, spine: "4.1.20" }))).toBe("4.1.20");
-	});
-
-	it("rejects text that is not JSON", () => {
-		expect(() => readSpineVersion("{ not json")).toThrow("skeleton file is not valid JSON");
-		expect(() => readSpineVersion("")).toThrow("skeleton file is not valid JSON");
-	});
-
-	it("rejects a skeleton without a usable version", () => {
-		const message = 'skeleton json has no "spine" version field';
-		expect(() => readSpineVersion(JSON.stringify({ skeleton: { width: 1 } }))).toThrow(message);
-		expect(() => readSpineVersion(JSON.stringify({ skeleton: { spine: "" } }))).toThrow(
-			message,
-		);
-		expect(() => readSpineVersion(JSON.stringify({ skeleton: { spine: 4.2 } }))).toThrow(
-			message,
-		);
-		expect(() => readSpineVersion("[]")).toThrow(message);
-	});
-
-	it.each(["null", "42", '"4.2"', '{ "skeleton": null }'])(
-		"reports a missing version for %s",
-		(text) => {
-			expect(() => readSpineVersion(text)).toThrow(
-				'skeleton json has no "spine" version field',
-			);
-		},
-	);
-});
+import { majorFor } from "#/spine/version.ts";
 
 describe("majorFor", () => {
 	it("uses the 4.0 runtime for 4.0 exports", () => {

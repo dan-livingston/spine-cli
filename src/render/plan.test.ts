@@ -91,16 +91,6 @@ describe("planJobs for one skeleton", () => {
 		expect(() => planJobs([input], plan())).toThrow("skeleton has no animations");
 	});
 
-	it("refuses a skeleton whose JSON has no animations key", () => {
-		const input = resolvedInput({ jsonText: JSON.stringify({ slots: [{ name: "body" }] }) });
-		expect(() => planJobs([input], plan())).toThrow("skeleton has no animations");
-	});
-
-	it("fails a single skeleton whose JSON cannot be parsed, naming the skeleton", () => {
-		const input = resolvedInput({ jsonText: "{not json" });
-		expect(() => planJobs([input], plan())).toThrow(/^hero: /);
-	});
-
 	it("names every atlas texture missing on disk", () => {
 		const input = resolvedInput({
 			atlas: {
@@ -131,12 +121,6 @@ describe("planJobs with pieces", () => {
 		expect(jobs[0]?.piece).toEqual({ name: "door", slots: ["door/l", "door/r"] });
 	});
 
-	it("reads slot names from a slots map as well as a slots array", () => {
-		const input = resolvedInput({ slots: { "door/l": {}, background: {} } });
-		const jobs = planJobs([input], plan({ pieceSpecs: ["door/*"] }));
-		expect(jobs[0]?.piece?.slots).toEqual(["door/l"]);
-	});
-
 	it("fails a single skeleton when a piece matches no slots", () => {
 		const input = resolvedInput({ slots });
 		expect(() => planJobs([input], plan({ pieceSpecs: ["door/*", "lid"] }))).toThrow(
@@ -156,13 +140,6 @@ describe("planJobs with pieces", () => {
 			'skip /proj/hero.json: --piece "lid" matched no slots',
 			'skip /proj/vault.json: --piece "door/*" matched no slots',
 		]);
-	});
-
-	it("refuses pieces on a skeleton whose JSON has no slots key", () => {
-		const input = resolvedInput({ jsonText: JSON.stringify({ animations: { idle: {} } }) });
-		expect(() => planJobs([input], plan({ pieceSpecs: ["*"] }))).toThrow(
-			"skeleton has no slots to select pieces from",
-		);
 	});
 
 	it("refuses pieces on a skeleton with no slots", () => {
@@ -186,7 +163,7 @@ describe("planJobs for a batch", () => {
 	});
 
 	it("skips skeletons it cannot plan, warning with the reason, and plans the rest", () => {
-		const broken = resolvedInput({ skeletonName: "broken", jsonText: "{not json" });
+		const broken = resolvedInput({ skeletonName: "broken", animations: [] });
 		const noTexture = resolvedInput({
 			skeletonName: "bare",
 			atlas: { pages: [atlasPage("bare.png", false)] },
@@ -199,7 +176,7 @@ describe("planJobs for a batch", () => {
 		expect(jobs.map((j) => j.input.skeletonName)).toEqual(["hero"]);
 		const warnings = warn.mock.calls.map((c: unknown[]) => String(c[0]));
 		expect(warnings).toHaveLength(3);
-		expect(warnings[0]).toMatch(/^skip \/proj\/broken\.json: /);
+		expect(warnings[0]).toBe("skip /proj/broken.json: skeleton has no animations");
 		expect(warnings[1]).toBe(
 			"skip /proj/bare.json: atlas texture missing on disk: /proj/bare.png",
 		);

@@ -12,7 +12,6 @@ import type {
 	MeasureResult,
 	RenderRequest,
 	SessionConfig,
-	SessionMeta,
 } from "#/render/harness/contract.ts";
 
 import { framesPerBatch } from "#/render/frame-batch.ts";
@@ -111,7 +110,7 @@ class PlaywrightWorker implements RenderWorker {
 		this.errors = errors;
 	}
 
-	async createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }> {
+	async createSession(config: SessionConfig): Promise<{ id: number }> {
 		return this.withPageErrors(() =>
 			this.page.evaluate(
 				(cfg) => (window as HarnessWindow).SpineHarness.createSession(cfg),

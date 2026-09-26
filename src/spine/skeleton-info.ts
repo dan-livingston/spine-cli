@@ -1,4 +1,5 @@
 import type { AnimationInfo } from "#/spine/animation-info.ts";
+import type { Skeleton } from "#/spine/skeleton.ts";
 
 import { parseAnimations } from "#/spine/animation-info.ts";
 
@@ -27,20 +28,14 @@ interface SkinShape {
 	attachments: Record<string, Record<string, { type?: string }>>;
 }
 
-export function parseSkeletonInfo(jsonText: string): SkeletonInfo {
-	let data: Record<string, unknown>;
-	try {
-		data = JSON.parse(jsonText) as Record<string, unknown>;
-	} catch {
-		throw new Error("skeleton file is not valid JSON");
-	}
-
-	const skeleton = (data.skeleton as Record<string, unknown> | undefined) ?? {};
-	const width = num(skeleton.width);
-	const height = num(skeleton.height);
+export function parseSkeletonInfo(skeleton: Skeleton): SkeletonInfo {
+	const { data } = skeleton;
+	const header = (data.skeleton as Record<string, unknown> | undefined) ?? {};
+	const width = num(header.width);
+	const height = num(header.height);
 
 	const bones = arr(data.bones).length;
-	const slots = arr(data.slots).length;
+	const slots = skeleton.slots.length;
 
 	const skinList = normalizeSkins(data.skins);
 

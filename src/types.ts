@@ -1,3 +1,5 @@
+import type { Skeleton } from "#/spine/skeleton.ts";
+
 export type SpineMajor = "4.0" | "4.2";
 
 export interface AtlasPageLayout {
@@ -23,6 +25,5 @@ export interface ResolvedInput {
 	atlasPath: string;
 	atlasText: string;
 	atlas: ParsedAtlas;
-	version: string;
-	major: SpineMajor;
+	skeleton: Skeleton;
 }

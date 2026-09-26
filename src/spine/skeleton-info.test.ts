@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { parseSkeletonInfo } from "#/spine/skeleton-info.ts";
+import { parseSkeleton } from "#/spine/skeleton.ts";
+
+const infoOf = (body: object) =>
+	parseSkeletonInfo(parseSkeleton(JSON.stringify({ spine: "4.2.0", ...body })));
 
 const hero = {
 	skeleton: {
@@ -54,7 +58,7 @@ const hero = {
 
 describe("parseSkeletonInfo", () => {
 	it("summarises a 4.x skeleton", () => {
-		expect(parseSkeletonInfo(JSON.stringify(hero))).toMatchObject({
+		expect(infoOf(hero)).toMatchObject({
 			width: 120.5,
 			height: 240,
 			bones: 3,
@@ -73,7 +77,7 @@ describe("parseSkeletonInfo", () => {
 	});
 
 	it("takes the latest keyframe across deeply nested timelines", () => {
-		const json = JSON.stringify({
+		const body = {
 			animations: {
 				hit: {
 					attachments: {
@@ -82,20 +86,18 @@ describe("parseSkeletonInfo", () => {
 					bones: { hip: { translate: [{ time: 1 }] } },
 				},
 			},
-		});
-		expect(parseSkeletonInfo(json).animations).toMatchObject([
-			{ name: "hit", duration: 3.142 },
-		]);
+		};
+		expect(infoOf(body).animations).toMatchObject([{ name: "hit", duration: 3.142 }]);
 	});
 
 	it("reads the older object form of skins", () => {
-		const json = JSON.stringify({
+		const body = {
 			skins: {
 				default: { body: { body: {}, tail: { type: "linkedmesh", parent: "body" } } },
 				red: { body: { body: { type: "boundingbox" } } },
 			},
-		});
-		const info = parseSkeletonInfo(json);
+		};
+		const info = infoOf(body);
 		expect(info.skins).toEqual(["default", "red"]);
 		expect(info.attachments).toBe(3);
 		expect(info.hasMeshes).toBe(true);
@@ -103,23 +105,23 @@ describe("parseSkeletonInfo", () => {
 	});
 
 	it("flags clipping without flagging meshes", () => {
-		const json = JSON.stringify({
+		const body = {
 			skins: [{ name: "default", attachments: { body: { clip: { type: "clipping" } } } }],
-		});
-		const info = parseSkeletonInfo(json);
+		};
+		const info = infoOf(body);
 		expect([info.hasMeshes, info.hasClipping]).toEqual([false, true]);
 	});
 
 	it("names an unnamed skin default and tolerates null entries", () => {
-		const json = JSON.stringify({ skins: [{ attachments: { body: { a: null } } }, null] });
-		const info = parseSkeletonInfo(json);
+		const body = { skins: [{ attachments: { body: { a: null } } }, null] };
+		const info = infoOf(body);
 		expect(info.skins).toEqual(["default", "default"]);
 		expect(info.attachments).toBe(1);
 		expect(info.hasMeshes).toBe(false);
 	});
 
 	it("reports zeros for a skeleton with no content", () => {
-		expect(parseSkeletonInfo("{}")).toEqual({
+		expect(infoOf({})).toEqual({
 			width: 0,
 			height: 0,
 			bones: 0,
@@ -134,20 +136,33 @@ describe("parseSkeletonInfo", () => {
 	});
 
 	it("ignores fields of the wrong shape", () => {
-		const json = JSON.stringify({
+		const body = {
 			skeleton: { width: "100", height: null },
 			bones: "root",
 			slots: { body: {} },
 			skins: "default",
 			animations: "idle",
-		});
-		const info = parseSkeletonInfo(json);
+		};
+		const info = infoOf(body);
 		expect([info.width, info.height, info.bones, info.slots]).toEqual([0, 0, 0, 0]);
 		expect(info.skins).toEqual([]);
 		expect(info.animations).toEqual([]);
 	});
+});
 
-	it("rejects text that is not JSON", () => {
-		expect(() => parseSkeletonInfo("{")).toThrow("skeleton file is not valid JSON");
+describe("parseSkeletonInfo agrees with the skeleton model planning reads", () => {
+	it.each([
+		{ animations: "idle" },
+		{ animations: [{}] },
+		{ slots: [null] },
+		{ slots: [{}] },
+		{ slots: { a: {} } },
+	])("for %o", (body) => {
+		const skeleton = parseSkeleton(JSON.stringify({ spine: "4.2.0", ...body }));
+		const info = parseSkeletonInfo(skeleton);
+		expect(info.animations.map((a) => a.name)).toEqual(skeleton.animations);
+		expect(info.slots).toBe(skeleton.slots.length);
+		expect(info.slots).toBe(0);
+		expect(info.animations).toEqual([]);
 	});
 });

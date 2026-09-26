@@ -5,7 +5,6 @@ import type {
 	MeasureResult,
 	RenderRequest,
 	SessionConfig,
-	SessionMeta,
 } from "#/render/harness/contract.ts";
 
 export type ClipScript = Clip | ((req: RenderRequest, session: SessionRecord) => Clip);
@@ -15,7 +14,6 @@ export type MeasureScript =
 	| ((req: MeasureRequest, session: SessionRecord) => MeasureResult);
 
 export interface FakeRenderPoolOptions {
-	meta?: Partial<SessionMeta>;
 	clip?: ClipScript;
 	measure?: MeasureScript;
 	createSessionError?: string;
@@ -42,13 +40,6 @@ export interface MeasureRecord {
 
 export const DEFAULT_BOX: Box = { x: 0, y: 0, width: 100, height: 100 };
 
-export const DEFAULT_META: SessionMeta = {
-	animations: [{ name: "idle", duration: 1 }],
-	skins: ["default"],
-	slots: [],
-	declared: DEFAULT_BOX,
-};
-
 export function solidClip(
 	width = 2,
 	height = 2,
@@ -63,17 +54,16 @@ export function solidClip(
 	return { width, height, frames: Array.from({ length: frameCount }, frame) };
 }
 
-function defaultMeasure(req: MeasureRequest, meta: SessionMeta): MeasureResult {
+function defaultMeasure(req: MeasureRequest): MeasureResult {
 	return {
 		perPiece: req.pieces.map(() => ({ ...DEFAULT_BOX })),
 		selectedUnion: { ...DEFAULT_BOX },
 		skeletonUnion: { ...DEFAULT_BOX },
-		declared: { ...meta.declared },
+		declared: { ...DEFAULT_BOX },
 	};
 }
 
 export class FakeRenderPool implements RenderPool {
-	readonly meta: SessionMeta;
 	readonly sessions: SessionRecord[] = [];
 	readonly renders: RenderRecord[] = [];
 	readonly measures: MeasureRecord[] = [];
@@ -85,7 +75,6 @@ export class FakeRenderPool implements RenderPool {
 
 	constructor(options: FakeRenderPoolOptions = {}) {
 		this.options = options;
-		this.meta = { ...DEFAULT_META, ...options.meta };
 	}
 
 	disposed(): number[] {
@@ -114,14 +103,11 @@ export class FakeRenderPool implements RenderPool {
 		this.closeCount += 1;
 	}
 
-	private createSession(
-		worker: number,
-		config: SessionConfig,
-	): { id: number; meta: SessionMeta } {
+	private createSession(worker: number, config: SessionConfig): { id: number } {
 		if (this.options.createSessionError) throw new Error(this.options.createSessionError);
 		const id = this.nextId++;
 		this.sessions.push({ id, worker, config, disposed: false });
-		return { id, meta: structuredClone(this.meta) };
+		return { id };
 	}
 
 	private render(worker: number, id: number, req: RenderRequest): Clip {
@@ -135,7 +121,7 @@ export class FakeRenderPool implements RenderPool {
 		const session = this.session(id);
 		this.measures.push({ id, worker, req: structuredClone(req) });
 		const script = this.options.measure;
-		if (!script) return defaultMeasure(req, this.meta);
+		if (!script) return defaultMeasure(req);
 		return typeof script === "function" ? script(req, session) : script;
 	}
 
