@@ -8,7 +8,6 @@ import { resolvePieces } from "#/render/pieces.ts";
 export interface Job {
 	input: ResolvedInput;
 	animation: string;
-	includeAnimation: boolean;
 	piece?: Piece;
 	target: { path: string; isDir: boolean };
 }
@@ -47,18 +46,15 @@ function planSkeletonJobs(input: ResolvedInput, plan: JobPlan): Job[] {
 					console.warn(`skip ${input.jsonPath}: ${reason}`);
 				})
 			: [undefined];
-	const includeAnimation = plan.batch || animations.length > 1;
 	return animations.flatMap((animation) =>
 		pieces.map((piece) => ({
 			input,
 			animation,
-			includeAnimation,
 			piece,
 			target: planOutput({
 				jsonPath: input.jsonPath,
 				skeletonName: input.skeletonName,
 				animation,
-				includeAnimation,
 				piece: piece?.name,
 				format: plan.format,
 				out: plan.out,

@@ -38,9 +38,11 @@ describe("renderCommand with one skeleton", () => {
 		const { env, files, pool } = heroEnv();
 		await renderCommand(env, TARGET, {});
 
-		expect(files.writtenPaths()).toEqual(["/proj/hero/0001.png"]);
-		expect(Array.from(files.bytes("/proj/hero/0001.png").slice(0, 8))).toEqual(PNG_SIGNATURE);
-		expect(logs).toEqual([`wrote ${resolve("/proj/hero")}/ (1 frames)`]);
+		expect(files.writtenPaths()).toEqual(["/proj/hero_idle/0001.png"]);
+		expect(Array.from(files.bytes("/proj/hero_idle/0001.png").slice(0, 8))).toEqual(
+			PNG_SIGNATURE,
+		);
+		expect(logs).toEqual([`wrote ${resolve("/proj/hero_idle")}/ (1 frames)`]);
 		expect(pool.sessions).toHaveLength(1);
 		expect(pool.openSessions()).toEqual([]);
 		expect(pool.closeCount).toBe(1);
@@ -105,13 +107,13 @@ describe("renderCommand with one skeleton", () => {
 		});
 	});
 
-	it("renders a png still at --frame and names it after the skeleton", async () => {
+	it("renders a png still at --frame and names it after the skeleton and animation", async () => {
 		const { env, files, pool } = heroEnv();
 		await renderCommand(env, TARGET, { format: "png", frame: "0.5" });
 
 		expect(pool.renders[0].req.times).toEqual([0.5]);
-		expect(files.writtenPaths()).toEqual(["/proj/hero.png"]);
-		expect(logs).toEqual([`wrote ${resolve("/proj/hero.png")}`]);
+		expect(files.writtenPaths()).toEqual(["/proj/hero_idle.png"]);
+		expect(logs).toEqual([`wrote ${resolve("/proj/hero_idle.png")}`]);
 	});
 
 	it("names each output after its animation for -a all and shares one session", async () => {
@@ -141,7 +143,7 @@ describe("renderCommand with one skeleton", () => {
 		expect(pool.renders[0].req.background).toEqual({ r: 1, g: 1, b: 1, a: 1 });
 		const runs = processes.runsOf("ffmpeg");
 		expect(runs).toHaveLength(1);
-		expect(runs[0].args.at(-1)).toBe(resolve("/proj/hero.mp4"));
+		expect(runs[0].args.at(-1)).toBe(resolve("/proj/hero_idle.mp4"));
 	});
 
 	it.each([
@@ -153,7 +155,7 @@ describe("renderCommand with one skeleton", () => {
 
 		const args = processes.runsOf("img2webp")[0].args;
 		expect(args.slice(4, 4 + compression.length)).toEqual(compression);
-		expect(args.slice(-2)).toEqual(["-o", resolve("/proj/hero.webp")]);
+		expect(args.slice(-2)).toEqual(["-o", resolve("/proj/hero_idle.webp")]);
 	});
 
 	it("logs the frame count of a png sequence written to --out", async () => {
@@ -179,7 +181,7 @@ describe("renderCommand with one skeleton", () => {
 		expect(pool.sessions[0].config.pages).toEqual([
 			{ name: "alt.png", dataUrl: "data:image/png;base64,CQ==" },
 		]);
-		expect(files.writtenPaths()).toEqual(["/out/hero/0001.png"]);
+		expect(files.writtenPaths()).toEqual(["/out/hero_idle/0001.png"]);
 	});
 });
 
@@ -287,7 +289,7 @@ describe("renderCommand dry run", () => {
 		expect(logs).toEqual([
 			resolve("/proj/hero_idle.mp4"),
 			resolve("/proj/hero_run.mp4"),
-			`${resolve("/proj/hero")}/ (png sequence)`,
+			`${resolve("/proj/hero_idle")}/ (png sequence)`,
 		]);
 		expect(launches()).toBe(0);
 		expect(processes.versionChecks).toEqual([]);

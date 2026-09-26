@@ -32,7 +32,6 @@ export interface OutputContext {
 	jsonPath: string;
 	skeletonName: string;
 	animation: string;
-	includeAnimation: boolean;
 	piece?: string;
 	format: Format;
 	out?: string;
@@ -44,8 +43,7 @@ export function planOutput(ctx: OutputContext): OutputTarget {
 		return { path: ctx.out, isDir: ctx.format === "pngseq" };
 	}
 	const dir = ctx.outDir ?? dirname(ctx.jsonPath);
-	let base = ctx.skeletonName;
-	if (ctx.includeAnimation) base += `_${ctx.animation}`;
+	let base = `${ctx.skeletonName}_${ctx.animation}`;
 	if (ctx.piece) base += `_${ctx.piece}`;
 	if (ctx.format === "pngseq") {
 		return { path: join(dir, base), isDir: true };

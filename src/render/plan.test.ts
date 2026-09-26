@@ -28,13 +28,13 @@ describe("planJobs for one skeleton", () => {
 	it("plans the only animation beside the skeleton without -a", () => {
 		const jobs = planJobs([resolvedInput()], plan());
 		expect(jobs).toHaveLength(1);
-		expect(jobs[0]).toMatchObject({ animation: "idle", includeAnimation: false });
-		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero.gif"), isDir: false });
+		expect(jobs[0]).toMatchObject({ animation: "idle" });
+		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero_idle.gif"), isDir: false });
 	});
 
 	it("plans a png sequence as a directory", () => {
 		const jobs = planJobs([resolvedInput()], plan({ format: "pngseq" }));
-		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero"), isDir: true });
+		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero_idle"), isDir: true });
 	});
 
 	it("plans every animation with -a all, naming each file after its animation", () => {
@@ -54,7 +54,7 @@ describe("planJobs for one skeleton", () => {
 		expect(jobs.map((j) => j.animation)).toEqual(["run"]);
 	});
 
-	it.fails("needs fix: README names outputs {skeleton}_{animation}.{ext} but a single chosen animation drops the animation", () => {
+	it("names the file after a single chosen animation", () => {
 		const input = resolvedInput({ animations: ["idle", "run"] });
 		const jobs = planJobs([input], plan({ animation: "run" }));
 		expect(targets(jobs)).toEqual([join("/proj", "hero_run.gif")]);
@@ -183,7 +183,6 @@ describe("planJobs for a batch", () => {
 			join("/proj", "hero_idle.gif"),
 			join("/proj", "vault_idle.gif"),
 		]);
-		expect(jobs.every((j) => j.includeAnimation)).toBe(true);
 	});
 
 	it("skips skeletons it cannot plan, warning with the reason, and plans the rest", () => {

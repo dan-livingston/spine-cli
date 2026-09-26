@@ -29,7 +29,6 @@ const job = (path: string, isDir = false): Job => ({
 		major: "4.2",
 	},
 	animation: "idle",
-	includeAnimation: false,
 	target: { path: resolve(path), isDir },
 });
 

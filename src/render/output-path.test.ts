@@ -11,7 +11,6 @@ const base: OutputContext = {
 	jsonPath: join(chars, "hero.json"),
 	skeletonName: "hero",
 	animation: "run",
-	includeAnimation: false,
 	format: "gif",
 };
 
@@ -27,40 +26,36 @@ describe("isFormat", () => {
 });
 
 describe("planOutput", () => {
-	it("writes beside the skeleton, named after it, with the extension of the format", () => {
-		expect(planOutput(base)).toEqual({ path: join(chars, "hero.gif"), isDir: false });
-		expect(planOutput({ ...base, format: "apng" }).path).toBe(join(chars, "hero.apng"));
-		expect(planOutput({ ...base, format: "webp" }).path).toBe(join(chars, "hero.webp"));
+	it("writes beside the skeleton, named after it and the animation, with the extension of the format", () => {
+		expect(planOutput(base)).toEqual({ path: join(chars, "hero_run.gif"), isDir: false });
+		expect(planOutput({ ...base, format: "apng" }).path).toBe(join(chars, "hero_run.apng"));
+		expect(planOutput({ ...base, format: "webp" }).path).toBe(join(chars, "hero_run.webp"));
 	});
 
 	it("uses a directory with no extension for a png sequence", () => {
 		expect(planOutput({ ...base, format: "pngseq" })).toEqual({
-			path: join(chars, "hero"),
+			path: join(chars, "hero_run"),
 			isDir: true,
 		});
 	});
 
-	it("adds the animation and then the piece to the name", () => {
-		expect(planOutput({ ...base, includeAnimation: true, format: "mp4" }).path).toBe(
-			join(chars, "hero_run.mp4"),
+	it("adds the piece after the animation", () => {
+		expect(planOutput({ ...base, format: "mp4" }).path).toBe(join(chars, "hero_run.mp4"));
+		expect(planOutput({ ...base, piece: "door", format: "webm" }).path).toBe(
+			join(chars, "hero_run_door.webm"),
 		);
-		expect(
-			planOutput({ ...base, includeAnimation: true, piece: "door", format: "webm" }).path,
-		).toBe(join(chars, "hero_run_door.webm"));
 		expect(planOutput({ ...base, piece: "door", format: "png" }).path).toBe(
-			join(chars, "hero_door.png"),
+			join(chars, "hero_run_door.png"),
 		);
 	});
 
 	it("writes into --out-dir instead of beside the skeleton", () => {
-		expect(planOutput({ ...base, outDir: "out", includeAnimation: true }).path).toBe(
-			join("out", "hero_run.gif"),
-		);
+		expect(planOutput({ ...base, outDir: "out" }).path).toBe(join("out", "hero_run.gif"));
 	});
 
 	it("puts a png sequence directory into --out-dir", () => {
 		expect(planOutput({ ...base, outDir: "out", format: "pngseq", piece: "door" })).toEqual({
-			path: join("out", "hero_door"),
+			path: join("out", "hero_run_door"),
 			isDir: true,
 		});
 	});
@@ -77,7 +72,7 @@ describe("planOutput", () => {
 	});
 
 	it.fails("needs fix: an animation name with a Spine folder slash escapes into a subdirectory", () => {
-		const target = planOutput({ ...base, animation: "combat/attack", includeAnimation: true });
+		const target = planOutput({ ...base, animation: "combat/attack" });
 		expect(target.path.slice(chars.length + 1)).not.toMatch(/[\\/]/);
 	});
 });

@@ -51,7 +51,7 @@ describe("renderCommand batch", () => {
 		const { env, files } = castEnv();
 		await renderCommand(env, "/proj/h*.json", { format: "apng" });
 
-		expect(files.writtenPaths().sort()).toEqual(["/proj/hero.apng"]);
+		expect(files.writtenPaths().sort()).toEqual(["/proj/hero_idle.apng"]);
 	});
 
 	it("spreads skeletons over --concurrency workers but never more workers than skeletons", async () => {
@@ -113,7 +113,7 @@ describe("renderCommand batch", () => {
 		expect(launches()).toBe(0);
 	});
 
-	it.fails("needs fix: a batch that loses a skeleton at load time drops the animation from the survivor's name", async () => {
+	it("keeps the animation in the survivor's name when a batch loses a skeleton at load time", async () => {
 		const { env, files } = castEnv();
 		files.seed("/proj/boss.json", "{ not json");
 		await renderCommand(env, "/proj", { format: "apng" });
@@ -147,7 +147,10 @@ describe("renderCommand pieces", () => {
 			[["head", "hat"], MEASURED.perPiece[0]],
 			[["body"], MEASURED.perPiece[1]],
 		]);
-		expect(files.writtenPaths().sort()).toEqual(["/proj/hero_body.apng", "/proj/hero_h.apng"]);
+		expect(files.writtenPaths().sort()).toEqual([
+			"/proj/hero_idle_body.apng",
+			"/proj/hero_idle_h.apng",
+		]);
 	});
 
 	it.each([
