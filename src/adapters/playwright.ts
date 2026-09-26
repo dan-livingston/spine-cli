@@ -6,13 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
-import type {
-	HarnessApi,
-	MeasureRequest,
-	MeasureResult,
-	RenderRequest,
-	SessionConfig,
-} from "#/render/harness/contract.ts";
+import type { HarnessApi, RenderRequest, SessionConfig } from "#/render/harness/contract.ts";
 
 import { framesPerBatch } from "#/render/frame-batch.ts";
 
@@ -138,15 +132,6 @@ class PlaywrightWorker implements RenderWorker {
 			frames.push(...batch.map((b64) => base64ToBytes(b64)));
 		}
 		return { width: clip.width, height: clip.height, frames };
-	}
-
-	async measure(id: number, req: MeasureRequest): Promise<MeasureResult> {
-		return this.withPageErrors(() =>
-			this.page.evaluate(
-				(a) => (window as HarnessWindow).SpineHarness.measurePieces(a.id, a.req),
-				{ id, req },
-			),
-		);
 	}
 
 	async dispose(id: number): Promise<void> {

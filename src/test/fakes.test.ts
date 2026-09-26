@@ -140,7 +140,7 @@ describe("FakeProcesses", () => {
 });
 
 describe("FakeRenderPool", () => {
-	it("scripts sessions, renders and measures while recording calls", async () => {
+	it("scripts sessions and renders while recording calls", async () => {
 		const pool = new FakeRenderPool();
 		const worker = await pool.worker();
 		const config = {
@@ -153,8 +153,6 @@ describe("FakeRenderPool", () => {
 		const { id } = await worker.createSession(config);
 		const clip = await worker.render(id, { ...timing, background, width: 3, height: 1 });
 		expect(clip).toEqual(solidClip(3, 1));
-		const measured = await worker.measure(id, { ...timing, pieces: [["body"], ["head"]] });
-		expect(measured.perPiece).toHaveLength(2);
 		await worker.dispose(id);
 		await expect(worker.render(id, { ...timing, background })).rejects.toThrow(
 			"unknown session",
@@ -162,7 +160,6 @@ describe("FakeRenderPool", () => {
 		await pool.close();
 		expect(pool.sessions[0].config).toBe(config);
 		expect(pool.renders).toHaveLength(1);
-		expect(pool.measures).toHaveLength(1);
 		expect(pool.disposed()).toEqual([id]);
 		expect(pool.closed).toBe(true);
 	});

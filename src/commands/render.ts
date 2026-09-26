@@ -1,15 +1,13 @@
 import type { Env } from "#/ports/env.ts";
 import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
 import type { ClipWriter } from "#/render/clip-writer.ts";
-import type { MeasureResult } from "#/render/harness/contract.ts";
 import type { RenderOptions } from "#/render/options.ts";
-import type { Piece } from "#/render/pieces.ts";
 import type { Job, PlanRequest, RenderPlan, Skip } from "#/render/plan.ts";
 import type { RunParams } from "#/render/requests.ts";
 
 import { openClipWriter } from "#/render/clip-writer.ts";
 import { PlanError, planRender } from "#/render/plan.ts";
-import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
+import { buildRequest } from "#/render/requests.ts";
 import { sessionConfig } from "#/render/session-config.ts";
 import { parseRenderSettings } from "#/render/settings.ts";
 
@@ -108,13 +106,13 @@ async function renderGroup(env: Env, worker: RenderWorker, group: Job[], run: Ru
 	);
 	try {
 		for (const [animation, jobs] of groupBy(group, (j) => j.animation)) {
-			if (jobs[0].piece) {
-				await renderAlignedPieces(worker, id, animation, jobs, run);
-			} else {
-				for (const job of jobs) {
-					const clip = await worker.render(id, buildRequest(animation, run.params));
-					await writeAndLog(run, job, clip);
-				}
+			const groupSlots = slotUnion(jobs.flatMap((j) => j.piece?.slots ?? []));
+			for (const job of jobs) {
+				const req = buildRequest(animation, run.params, {
+					slots: job.piece?.slots,
+					groupSlots,
+				});
+				await writeAndLog(run, job, await worker.render(id, req));
 			}
 		}
 	} finally {
@@ -122,22 +120,8 @@ async function renderGroup(env: Env, worker: RenderWorker, group: Job[], run: Ru
 	}
 }
 
-async function renderAlignedPieces(
-	worker: RenderWorker,
-	id: number,
-	animation: string,
-	jobs: Job[],
-	run: Run,
-): Promise<void> {
-	const { params } = run;
-	const boxes = await measureFramingBoxes(worker, id, animation, jobs, params);
-	for (let i = 0; i < jobs.length; i++) {
-		const job = jobs[i];
-		const req = buildRequest(animation, params);
-		req.slots = piece(job).slots;
-		if (boxes) req.box = pickBox(params.fit, boxes, i);
-		await writeAndLog(run, job, await worker.render(id, req));
-	}
+function slotUnion(slots: string[]): string[] | undefined {
+	return slots.length > 0 ? [...new Set(slots)] : undefined;
 }
 
 async function writeAndLog(run: Run, job: Job, clip: Clip): Promise<void> {
@@ -145,21 +129,4 @@ async function writeAndLog(run: Run, job: Job, clip: Clip): Promise<void> {
 	console.log(
 		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
 	);
-}
-
-async function measureFramingBoxes(
-	worker: RenderWorker,
-	id: number,
-	animation: string,
-	jobs: Job[],
-	params: RunParams,
-): Promise<MeasureResult | undefined> {
-	if (params.fit === "declared") return undefined;
-	const pieces = jobs.map((j) => piece(j).slots);
-	return worker.measure(id, buildMeasureReq(animation, pieces, params));
-}
-
-function piece(job: Job): Piece {
-	if (!job.piece) throw new Error(`internal: job for ${job.target.path} has no piece`);
-	return job.piece;
 }

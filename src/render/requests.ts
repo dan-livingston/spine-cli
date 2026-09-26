@@ -1,13 +1,5 @@
 import type { Format } from "#/render/formats.ts";
-import type {
-	Box,
-	ClipTiming,
-	Fit,
-	MeasureRequest,
-	MeasureResult,
-	RenderRequest,
-	Rgba,
-} from "#/render/harness/contract.ts";
+import type { Fit, RenderRequest, Rgba } from "#/render/harness/contract.ts";
 
 import { formatSpec } from "#/render/formats.ts";
 
@@ -26,14 +18,16 @@ export interface RunParams {
 	lossyQuality?: number;
 }
 
-export function pickBox(fit: Fit, boxes: MeasureResult, i: number): Box {
-	if (fit === "piece") return boxes.perPiece[i];
-	if (fit === "shared") return boxes.selectedUnion;
-	if (fit === "bounds") return boxes.skeletonUnion;
-	return boxes.declared;
+export interface PieceFraming {
+	slots?: string[];
+	groupSlots?: string[];
 }
 
-function clipTiming(animation: string, params: RunParams): ClipTiming {
+export function buildRequest(
+	animation: string,
+	params: RunParams,
+	framing: PieceFraming = {},
+): RenderRequest {
 	const isSingleStill = formatSpec(params.format).still;
 	return {
 		animation,
@@ -43,22 +37,9 @@ function clipTiming(animation: string, params: RunParams): ClipTiming {
 		loops: params.loops,
 		fit: params.fit,
 		times: isSingleStill ? [params.frame] : undefined,
-	};
-}
-
-export function buildRequest(animation: string, params: RunParams): RenderRequest {
-	return {
-		...clipTiming(animation, params),
+		...framing,
 		width: params.width,
 		height: params.height,
 		background: params.background,
 	};
-}
-
-export function buildMeasureReq(
-	animation: string,
-	pieces: string[][],
-	params: RunParams,
-): MeasureRequest {
-	return { ...clipTiming(animation, params), pieces };
 }

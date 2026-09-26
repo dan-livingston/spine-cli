@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { Box, ClipTiming, MeasureRequest, RenderRequest } from "#/render/harness/contract.ts";
+import type { Box, ClipTiming, RenderRequest } from "#/render/harness/contract.ts";
 import type { Session } from "#/render/harness/session.ts";
 import type { StubSessionOptions } from "#/test/harness-fixtures.ts";
 
-import { measurePieces, nextFrames, startClip } from "#/render/harness/animate.ts";
+import { nextFrames, startClip } from "#/render/harness/animate.ts";
 import { decodeFrame, still, stubSession } from "#/test/harness-fixtures.ts";
 
 const registry = vi.hoisted(() => new Map<number, unknown>());
@@ -42,10 +42,6 @@ async function render(overrides: Partial<RenderRequest> = {}): Promise<{
 	const frames: string[] = [];
 	while (frames.length < clip.frameCount) frames.push(...(await nextFrames(1, BATCH)));
 	return { width: clip.width, height: clip.height, frames };
-}
-
-function measure(overrides: Partial<MeasureRequest> = {}) {
-	return measurePieces(1, { ...timing, pieces: [], ...overrides });
 }
 
 const sliding = (time: number): Box => ({ x: time * 100, y: 0, width: 10, height: 10 });
@@ -198,119 +194,25 @@ describe("clip framing", () => {
 		expect(await render({ width: 30 })).toMatchObject({ width: 30, height: 60 });
 	});
 
-	it("frames to a given box over the fit", async () => {
-		const { camera } = open({ declared });
-		const clip = await render({ fit: "bounds", box: { x: 10, y: 20, width: 40, height: 30 } });
-		expect(clip).toMatchObject({ width: 40, height: 30 });
-		expect(camera.position).toEqual({ x: 30, y: 35 });
+	it("frames a piece to its own slots and still draws only them", async () => {
+		const { records } = open({
+			declared,
+			slots: [
+				{ name: "coin", at: sliding },
+				{ name: "bg", at: still({ x: -100, y: -100, width: 300, height: 300 }) },
+			],
+		});
+		const clip = await render({ fit: "piece", slots: ["coin"], duration: 0.3 });
+		expect(clip).toMatchObject({ width: 30, height: 10 });
+		expect(records.draws.map((d) => d.attached)).toEqual([["coin"], ["coin"], ["coin"]]);
 	});
 
-	it("frames fit bounds without a box to every pose of the clip", async () => {
+	it("frames fit bounds to every pose of the clip", async () => {
 		const { records } = open({ declared, slots: [{ name: "coin", at: sliding }] });
 		const clip = await render({ fit: "bounds" });
 		expect(clip).toMatchObject({ width: 100, height: 10 });
 		expect(records.draws.map((d) => d.time)).toEqual(
 			[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => expect.closeTo(i / 10, 9)),
 		);
-	});
-
-	it("falls back to the scaled declared box when fit bounds finds nothing to frame", async () => {
-		open({ declared, scale: 2, slots: [] });
-		expect(await render({ fit: "bounds" })).toMatchObject({ width: 200, height: 400 });
-	});
-
-	it("frames to the declared box for piece and shared fits without a box", async () => {
-		open({ declared, slots: [{ name: "coin", at: sliding }] });
-		expect(await render({ fit: "piece" })).toMatchObject({ width: 100, height: 200 });
-		expect(await render({ fit: "shared" })).toMatchObject({ width: 100, height: 200 });
-	});
-});
-
-describe("measurePieces", () => {
-	it("unions the whole skeleton over every rendered frame for fit bounds", async () => {
-		open({ declared, slots: [{ name: "coin", at: sliding }] });
-		const result = await measure({ fit: "bounds", pieces: [["coin"]] });
-		expect(result.skeletonUnion.x).toBe(0);
-		expect(result.skeletonUnion.width).toBeCloseTo(100, 9);
-		expect(result.skeletonUnion.height).toBe(10);
-		expect(result.perPiece).toEqual([declared]);
-		expect(result.selectedUnion).toEqual(declared);
-	});
-
-	it("measures each piece on its own and unions them for piece and shared", async () => {
-		open({
-			declared,
-			slots: [
-				{ name: "door", at: still({ x: 0, y: 0, width: 20, height: 40 }) },
-				{ name: "coin", at: sliding },
-				{ name: "bg", at: still({ x: -100, y: -100, width: 300, height: 300 }) },
-			],
-		});
-		for (const fit of ["piece", "shared"] as const) {
-			const result = await measure({ fit, pieces: [["door"], ["coin"]] });
-			expect(result.perPiece[0]).toEqual({ x: 0, y: 0, width: 20, height: 40 });
-			expect(result.perPiece[1].width).toBeCloseTo(100, 9);
-			expect(result.selectedUnion.width).toBeCloseTo(100, 9);
-			expect(result.selectedUnion.height).toBe(40);
-			expect(result.skeletonUnion).toEqual(declared);
-		}
-	});
-
-	it("falls back to the scaled declared box for a piece that never shows", async () => {
-		open({ declared, scale: 2, slots: [{ name: "door", at: still(declared) }] });
-		const scaled = { x: -100, y: 0, width: 200, height: 400 };
-		const result = await measure({ fit: "piece", pieces: [["ghost"]] });
-		expect(result.perPiece).toEqual([scaled]);
-		expect(result.selectedUnion).toEqual(scaled);
-		expect(result.declared).toEqual(scaled);
-	});
-
-	it("measures a looped clip as it wraps back to the start", async () => {
-		const { records } = open({ declared, slots: [{ name: "coin", at: sliding }] });
-		const result = await measure({ fit: "bounds", loops: 2 });
-		expect(records.setAnimations[0].loop).toBe(true);
-		expect(records.updates).toHaveLength(20);
-		expect(result.skeletonUnion.x).toBe(0);
-		expect(result.skeletonUnion.width).toBeCloseTo(100, 9);
-	});
-
-	it("measures nothing for fit declared", async () => {
-		open({ declared, slots: [{ name: "coin", at: sliding }] });
-		const result = await measure({ fit: "declared", pieces: [["coin"]] });
-		expect(result).toEqual({
-			perPiece: [declared],
-			selectedUnion: declared,
-			skeletonUnion: declared,
-			declared,
-		});
-	});
-
-	it("measures with the requested skin on", async () => {
-		const { records } = open({ declared, slots: [{ name: "coin", at: sliding }] });
-		await measure({ fit: "bounds", skin: "gold", duration: 0.3 });
-		expect(records.skins.length).toBeGreaterThan(0);
-		expect(new Set(records.skins)).toEqual(new Set(["gold"]));
-	});
-
-	it("measures only the still time for a png", async () => {
-		open({ declared, slots: [{ name: "coin", at: sliding }] });
-		const result = await measure({ fit: "bounds", times: [0.5] });
-		expect(result.skeletonUnion).toEqual({ x: 50, y: 0, width: 10, height: 10 });
-	});
-
-	it("leaves every slot attached after measuring pieces", async () => {
-		const { session } = open({
-			slots: [
-				{ name: "door", at: still(declared) },
-				{ name: "coin", at: still(declared) },
-			],
-		});
-		await measure({ fit: "piece", pieces: [["door"]] });
-		expect(session.skeleton.slots.every((slot) => slot.getAttachment() !== null)).toBe(true);
-	});
-
-	it("names an animation the skeleton does not have", async () => {
-		open();
-		await expect(measure({ animation: "run" })).rejects.toThrow("animation not found: run");
 	});
 });

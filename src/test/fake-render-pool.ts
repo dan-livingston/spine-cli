@@ -1,21 +1,10 @@
 import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
-import type {
-	Box,
-	MeasureRequest,
-	MeasureResult,
-	RenderRequest,
-	SessionConfig,
-} from "#/render/harness/contract.ts";
+import type { Box, RenderRequest, SessionConfig } from "#/render/harness/contract.ts";
 
 export type ClipScript = Clip | ((req: RenderRequest, session: SessionRecord) => Clip);
 
-export type MeasureScript =
-	| MeasureResult
-	| ((req: MeasureRequest, session: SessionRecord) => MeasureResult);
-
 export interface FakeRenderPoolOptions {
 	clip?: ClipScript;
-	measure?: MeasureScript;
 	createSessionError?: string;
 }
 
@@ -30,12 +19,6 @@ export interface RenderRecord {
 	id: number;
 	worker: number;
 	req: RenderRequest;
-}
-
-export interface MeasureRecord {
-	id: number;
-	worker: number;
-	req: MeasureRequest;
 }
 
 export const DEFAULT_BOX: Box = { x: 0, y: 0, width: 100, height: 100 };
@@ -54,19 +37,9 @@ export function solidClip(
 	return { width, height, frames: Array.from({ length: frameCount }, frame) };
 }
 
-function defaultMeasure(req: MeasureRequest): MeasureResult {
-	return {
-		perPiece: req.pieces.map(() => ({ ...DEFAULT_BOX })),
-		selectedUnion: { ...DEFAULT_BOX },
-		skeletonUnion: { ...DEFAULT_BOX },
-		declared: { ...DEFAULT_BOX },
-	};
-}
-
 export class FakeRenderPool implements RenderPool {
 	readonly sessions: SessionRecord[] = [];
 	readonly renders: RenderRecord[] = [];
-	readonly measures: MeasureRecord[] = [];
 	readonly workers: RenderWorker[] = [];
 	closed = false;
 	closeCount = 0;
@@ -91,7 +64,6 @@ export class FakeRenderPool implements RenderPool {
 		const worker: RenderWorker = {
 			createSession: async (config) => this.createSession(index, config),
 			render: async (id, req) => this.render(index, id, req),
-			measure: async (id, req) => this.measure(index, id, req),
 			dispose: async (id) => this.dispose(id),
 		};
 		this.workers.push(worker);
@@ -114,14 +86,6 @@ export class FakeRenderPool implements RenderPool {
 		const session = this.session(id);
 		this.renders.push({ id, worker, req: structuredClone(req) });
 		const script = this.options.clip ?? solidClip(req.width ?? 2, req.height ?? 2);
-		return typeof script === "function" ? script(req, session) : script;
-	}
-
-	private measure(worker: number, id: number, req: MeasureRequest): MeasureResult {
-		const session = this.session(id);
-		this.measures.push({ id, worker, req: structuredClone(req) });
-		const script = this.options.measure;
-		if (!script) return defaultMeasure(req);
 		return typeof script === "function" ? script(req, session) : script;
 	}
 

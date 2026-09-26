@@ -1,8 +1,6 @@
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { MeasureResult } from "#/render/harness/contract.ts";
-
 import { renderCommand } from "#/commands/render.ts";
 import { heroEnv, seedSkeleton } from "#/test/cmd-render-fixtures.ts";
 import { fakeEnv } from "#/test/fake-env.ts";
@@ -135,59 +133,41 @@ describe("renderCommand batch", () => {
 	});
 });
 
-const MEASURED: MeasureResult = {
-	perPiece: [
-		{ x: 1, y: 1, width: 10, height: 10 },
-		{ x: 2, y: 2, width: 20, height: 20 },
-	],
-	selectedUnion: { x: 1, y: 1, width: 21, height: 21 },
-	skeletonUnion: { x: 0, y: 0, width: 50, height: 50 },
-	declared: { x: -5, y: -5, width: 100, height: 100 },
-};
-
 describe("renderCommand pieces", () => {
 	const pieceOptions = { format: "apng", piece: ["h*", "body"] };
+	const framing = (pool: ReturnType<typeof heroEnv>["pool"]) =>
+		pool.renders.map(({ req }) => ({
+			fit: req.fit,
+			slots: req.slots,
+			groupSlots: req.groupSlots,
+		}));
 
-	it("renders one file per piece framed to its own bounds with --fit piece", async () => {
-		const { env, files, pool } = heroEnv(
-			{ slots: ["body", "head", "hat"] },
-			{ pool: { measure: MEASURED } },
-		);
-		await renderCommand(env, "/proj/hero.json", { ...pieceOptions, fit: "piece" });
+	it.each(["declared", "bounds", "piece", "shared"])(
+		"sends each piece with its own slots and the group's slots for --fit %s",
+		async (fit) => {
+			const { env, files, pool } = heroEnv({ slots: ["body", "head", "hat"] });
+			await renderCommand(env, "/proj/hero.json", { ...pieceOptions, fit });
 
-		expect(pool.measures.map((m) => m.req.pieces)).toEqual([[["head", "hat"], ["body"]]]);
-		expect(pool.renders.map((r) => [r.req.slots, r.req.box])).toEqual([
-			[["head", "hat"], MEASURED.perPiece[0]],
-			[["body"], MEASURED.perPiece[1]],
-		]);
-		expect(files.writtenPaths().sort()).toEqual([
-			"/proj/hero_idle_body.apng",
-			"/proj/hero_idle_h.apng",
-		]);
-	});
+			const groupSlots = ["head", "hat", "body"];
+			expect(framing(pool)).toEqual([
+				{ fit, slots: ["head", "hat"], groupSlots },
+				{ fit, slots: ["body"], groupSlots },
+			]);
+			expect(files.writtenPaths().sort()).toEqual([
+				"/proj/hero_idle_body.apng",
+				"/proj/hero_idle_h.apng",
+			]);
+		},
+	);
 
-	it.each([
-		["shared", MEASURED.selectedUnion],
-		["bounds", MEASURED.skeletonUnion],
-	])("frames every piece to the same box with --fit %s", async (fit, box) => {
-		const { env, pool } = heroEnv({}, { pool: { measure: MEASURED } });
-		await renderCommand(env, "/proj/hero.json", { ...pieceOptions, fit });
-
-		expect(pool.renders.map((r) => r.req.box)).toEqual([box, box]);
-	});
-
-	it("skips measuring with the default declared fit", async () => {
+	it("sends no slots without pieces", async () => {
 		const { env, pool } = heroEnv();
-		await renderCommand(env, "/proj/hero.json", pieceOptions);
+		await renderCommand(env, "/proj/hero.json", { format: "apng", fit: "bounds" });
 
-		expect(pool.measures).toEqual([]);
-		expect(pool.renders.map((r) => [r.req.slots, r.req.box])).toEqual([
-			[["head"], undefined],
-			[["body"], undefined],
-		]);
+		expect(framing(pool)).toEqual([{ fit: "bounds", slots: undefined, groupSlots: undefined }]);
 	});
 
-	it("measures each animation separately for -a all", async () => {
+	it("renders every piece of every animation in one session for -a all", async () => {
 		const { env, files, pool } = heroEnv({ animations: ["idle", "run"] });
 		await renderCommand(env, "/proj/hero.json", {
 			...pieceOptions,
@@ -195,7 +175,12 @@ describe("renderCommand pieces", () => {
 			fit: "shared",
 		});
 
-		expect(pool.measures.map((m) => m.req.animation)).toEqual(["idle", "run"]);
+		expect(pool.renders.map((r) => [r.req.animation, r.req.slots])).toEqual([
+			["idle", ["head"]],
+			["idle", ["body"]],
+			["run", ["head"]],
+			["run", ["body"]],
+		]);
 		expect(files.writtenPaths().sort()).toEqual([
 			"/proj/hero_idle_body.apng",
 			"/proj/hero_idle_h.apng",

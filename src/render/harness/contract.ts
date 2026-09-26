@@ -36,21 +36,10 @@ export interface ClipTiming {
 
 export interface RenderRequest extends ClipTiming {
 	slots?: string[];
-	box?: Box;
+	groupSlots?: string[];
 	width?: number;
 	height?: number;
 	background: Rgba;
-}
-
-export interface MeasureRequest extends ClipTiming {
-	pieces: string[][];
-}
-
-export interface MeasureResult {
-	perPiece: Box[];
-	selectedUnion: Box;
-	skeletonUnion: Box;
-	declared: Box;
 }
 
 export interface ClipInfo {
@@ -63,6 +52,5 @@ export interface HarnessApi {
 	createSession(config: SessionConfig): Promise<{ id: number }>;
 	startClip(id: number, req: RenderRequest): Promise<ClipInfo>;
 	nextFrames(id: number, maxFrames: number): Promise<string[]>;
-	measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
 	disposeSession(id: number): void;
 }

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { MeasureResult } from "#/render/harness/contract.ts";
 import type { RunParams } from "#/render/requests.ts";
 
-import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
+import { buildRequest } from "#/render/requests.ts";
 
 const params = (over: Partial<RunParams> = {}): RunParams => ({
 	scale: 1,
@@ -14,27 +13,6 @@ const params = (over: Partial<RunParams> = {}): RunParams => ({
 	background: { r: 0, g: 0, b: 0, a: 0 },
 	format: "gif",
 	...over,
-});
-
-const box = (x: number) => ({ x, y: x, width: 10 + x, height: 20 + x });
-
-const boxes: MeasureResult = {
-	perPiece: [box(1), box(2), box(3)],
-	selectedUnion: box(4),
-	skeletonUnion: box(5),
-	declared: box(6),
-};
-
-describe("pickBox", () => {
-	it("frames each fit mode to the box the README describes", () => {
-		expect(pickBox("declared", boxes, 0)).toEqual(box(6));
-		expect(pickBox("bounds", boxes, 0)).toEqual(box(5));
-		expect(pickBox("shared", boxes, 2)).toEqual(box(4));
-	});
-
-	it("gives each piece its own box under fit piece", () => {
-		expect([0, 1, 2].map((i) => pickBox("piece", boxes, i))).toEqual([box(1), box(2), box(3)]);
-	});
 });
 
 describe("buildRequest", () => {
@@ -82,26 +60,16 @@ describe("buildRequest", () => {
 			background,
 		});
 	});
-});
 
-describe("buildMeasureReq", () => {
-	it("measures with the same timing as the render and no output settings", () => {
-		const p = params({ format: "png", frame: 1.25, fps: 24, fit: "shared", width: 50 });
-		const pieces = [["door/*"], ["chips/a", "chips/b"]];
-		const measure = buildMeasureReq("open", pieces, p);
-		const render = buildRequest("open", p);
-		expect(measure).toEqual({
-			animation: "open",
-			skin: undefined,
-			fps: 24,
-			duration: 0,
-			loops: 1,
-			fit: "shared",
-			times: [1.25],
-			pieces,
+	it("carries a piece's slots and its group's slots for framing", () => {
+		const req = buildRequest("open", params({ fit: "shared" }), {
+			slots: ["door"],
+			groupSlots: ["door", "chips"],
 		});
-		expect(measure.times).toEqual(render.times);
-		expect(measure).not.toHaveProperty("background");
-		expect(measure).not.toHaveProperty("width");
+		expect(req).toMatchObject({
+			fit: "shared",
+			slots: ["door"],
+			groupSlots: ["door", "chips"],
+		});
 	});
 });
