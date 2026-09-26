@@ -52,7 +52,7 @@ describe("encodeApng", () => {
 		expect(apng.frames.map((f) => f.delayMs)).toEqual([ms, ms, ms]);
 	});
 
-	it.fails("needs fix: frames of a few pixels are cut off mid-file because upng-js sizes its output buffer from the raw frames", async () => {
+	it("writes frames of a few pixels whole, ending in IEND", async () => {
 		const frames = [solidFrame(2, 2, RED), solidFrame(2, 2, BLUE)];
 		const bytes = encodeApng(frames, 30);
 		expect(Array.from(bytes.subarray(-8, -4))).toEqual([73, 69, 78, 68]);

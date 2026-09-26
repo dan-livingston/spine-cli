@@ -1,9 +1,8 @@
 import { join } from "node:path";
-import UPNG from "upng-js";
 
 import type { Files } from "#/ports/files.ts";
 
-export const LOSSLESS_RGBA = 0;
+import { writePngFile } from "#/encode/png-file.ts";
 
 export interface Frame {
 	width: number;
@@ -12,8 +11,7 @@ export interface Frame {
 }
 
 export function encodePng(frame: Frame): Uint8Array {
-	const out = UPNG.encode([toArrayBuffer(frame.data)], frame.width, frame.height, LOSSLESS_RGBA);
-	return new Uint8Array(out);
+	return writePngFile([toArrayBuffer(frame.data)], frame.width, frame.height, []);
 }
 
 export async function writePngSequence(files: Files, dir: string, frames: Frame[]): Promise<void> {
