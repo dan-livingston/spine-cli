@@ -62,7 +62,8 @@ export async function resolveInputs(
 }
 
 async function collectJsonPaths(files: Files, target: string): Promise<string[]> {
-	if (isGlob(target)) {
+	const kind = await files.kindOf(target);
+	if (!kind && isGlob(target)) {
 		const matches = (await files.glob(target)).filter((entry) => entry.endsWith(".json"));
 		const kinds = await Promise.all(matches.map((entry) => files.kindOf(entry)));
 		return matches
@@ -71,7 +72,6 @@ async function collectJsonPaths(files: Files, target: string): Promise<string[]>
 			.sort();
 	}
 
-	const kind = await files.kindOf(target);
 	if (!kind) throw new Error(`no such file or directory: ${target}`);
 
 	if (kind === "directory") {

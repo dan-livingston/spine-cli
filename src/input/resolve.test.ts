@@ -365,7 +365,7 @@ describe("resolveInputs", () => {
 		]);
 	});
 
-	it.fails("needs fix: a literal skeleton path containing brackets is treated as a glob and not found", async () => {
+	it("takes an existing skeleton path with brackets literally", async () => {
 		const files = new FakeFiles({
 			files: { "/art/hero[v2].json": skeleton(), "/art/hero[v2].atlas": atlas() },
 		});
