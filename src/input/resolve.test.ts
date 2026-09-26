@@ -373,11 +373,13 @@ describe("resolveInputs", () => {
 		expect(inputs.map((i) => i.jsonPath)).toEqual([resolve("/art/hero[v2].json")]);
 	});
 
-	it.fails("needs fix: an upper-case .JSON skeleton is rejected though its name is stripped case-insensitively", async () => {
+	it("accepts an upper-case .JSON skeleton as a file, in a directory and from a glob", async () => {
 		const files = new FakeFiles({
 			files: { "/art/Hero.JSON": skeleton(), "/art/Hero.atlas": atlas() },
 		});
-		const inputs = await resolveInputs(files, "/art/Hero.JSON", undefined);
-		expect(inputs.map((i) => i.skeletonName)).toEqual(["Hero"]);
+		for (const target of ["/art/Hero.JSON", "/art", "/art/*"]) {
+			const inputs = await resolveInputs(files, target, undefined);
+			expect(inputs.map((i) => i.skeletonName)).toEqual(["Hero"]);
+		}
 	});
 });

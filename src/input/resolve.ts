@@ -8,6 +8,8 @@ import { majorFor, readSpineVersion } from "#/spine/version.ts";
 
 const ATLAS_EXTS = [".atlas.txt", ".atlas"];
 
+const JSON_EXTENSION = /\.json$/i;
+
 export async function resolveInput(
 	files: Files,
 	jsonPath: string,
@@ -15,7 +17,7 @@ export async function resolveInput(
 ): Promise<ResolvedInput> {
 	const abs = resolve(jsonPath);
 	const jsonText = await readText(files, abs, "skeleton json");
-	const skeletonName = basename(abs).replace(/\.json$/i, "");
+	const skeletonName = basename(abs).replace(JSON_EXTENSION, "");
 
 	const atlasPath = atlasOverride
 		? resolve(atlasOverride)
@@ -64,7 +66,7 @@ export async function resolveInputs(
 async function collectJsonPaths(files: Files, target: string): Promise<string[]> {
 	const kind = await files.kindOf(target);
 	if (!kind && isGlob(target)) {
-		const matches = (await files.glob(target)).filter((entry) => entry.endsWith(".json"));
+		const matches = (await files.glob(target)).filter(hasJsonExtension);
 		const kinds = await Promise.all(matches.map((entry) => files.kindOf(entry)));
 		return matches
 			.filter((_, i) => kinds[i] === "file")
@@ -77,12 +79,12 @@ async function collectJsonPaths(files: Files, target: string): Promise<string[]>
 	if (kind === "directory") {
 		const entries = await files.list(target);
 		return entries
-			.filter((e) => e.kind === "file" && e.name.endsWith(".json"))
+			.filter((e) => e.kind === "file" && hasJsonExtension(e.name))
 			.map((e) => resolve(target, e.name))
 			.sort();
 	}
 
-	if (!target.endsWith(".json")) throw new Error(`expected a .json skeleton, got: ${target}`);
+	if (!hasJsonExtension(target)) throw new Error(`expected a .json skeleton, got: ${target}`);
 	return [resolve(target)];
 }
 
@@ -128,6 +130,10 @@ async function findOnlyAtlas(files: Files, dir: string, jsonPath: string): Promi
 	throw new Error(
 		`multiple atlases beside ${basename(jsonPath)} (${atlases.join(", ")}); pass --atlas`,
 	);
+}
+
+function hasJsonExtension(path: string): boolean {
+	return JSON_EXTENSION.test(path);
 }
 
 function isGlob(target: string): boolean {
