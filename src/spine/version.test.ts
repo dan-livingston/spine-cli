@@ -33,11 +33,14 @@ describe("readSpineVersion", () => {
 		expect(() => readSpineVersion("[]")).toThrow(message);
 	});
 
-	it.fails("needs fix: a JSON null skeleton file crashes with a TypeError instead of the missing version error", () => {
-		expect(() => readSpineVersion("null")).toThrow(
-			'skeleton json has no "spine" version field',
-		);
-	});
+	it.each(["null", "42", '"4.2"', '{ "skeleton": null }'])(
+		"reports a missing version for %s",
+		(text) => {
+			expect(() => readSpineVersion(text)).toThrow(
+				'skeleton json has no "spine" version field',
+			);
+		},
+	);
 });
 
 describe("majorFor", () => {

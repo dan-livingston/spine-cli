@@ -7,9 +7,9 @@ export function readSpineVersion(jsonText: string): string {
 	} catch {
 		throw new Error("skeleton file is not valid JSON");
 	}
-	const obj = data as Record<string, unknown>;
-	const skeleton = obj.skeleton as Record<string, unknown> | undefined;
-	const version = (skeleton?.spine ?? obj.spine) as string | undefined;
+	const obj = isRecord(data) ? data : {};
+	const skeleton = isRecord(obj.skeleton) ? obj.skeleton : {};
+	const version = skeleton.spine ?? obj.spine;
 	if (typeof version !== "string" || version.length === 0) {
 		throw new Error('skeleton json has no "spine" version field');
 	}
@@ -23,4 +23,8 @@ export function majorFor(version: string): SpineMajor {
 	const minor = Number(match[2]);
 	const predates41Format = major < 4 || (major === 4 && minor === 0);
 	return predates41Format ? "4.0" : "4.2";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
