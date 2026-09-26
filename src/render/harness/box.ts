@@ -1,4 +1,4 @@
-import type { Box, Fit } from "#/render/harness/contract.ts";
+import type { Box } from "#/render/harness/contract.ts";
 import type { Session } from "#/render/harness/session.ts";
 
 export function boundsOf(s: Session): Box | null {
@@ -29,14 +29,6 @@ export function declaredBoxScaled(s: Session): Box {
 		width: sd.width * s.scale,
 		height: sd.height * s.scale,
 	};
-}
-
-export function frameBox(s: Session, fit: Fit): Box {
-	if (fit === "bounds") {
-		const bounds = boundsOf(s);
-		if (bounds) return bounds;
-	}
-	return declaredBoxScaled(s);
 }
 
 export function outputSize(

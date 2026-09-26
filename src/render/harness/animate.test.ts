@@ -171,10 +171,24 @@ describe("renderAnimation framing", () => {
 		expect(camera.position).toEqual({ x: 30, y: 35 });
 	});
 
-	it.fails("needs fix: fit bounds without a box frames only the first pose, not every frame of the clip", async () => {
-		open({ declared, slots: [{ name: "coin", at: sliding }] });
+	it("frames fit bounds without a box to every pose of the clip", async () => {
+		const { records } = open({ declared, slots: [{ name: "coin", at: sliding }] });
 		const clip = await render({ fit: "bounds" });
 		expect(clip).toMatchObject({ width: 100, height: 10 });
+		expect(records.draws.map((d) => d.time)).toEqual(
+			[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => expect.closeTo(i / 10, 9)),
+		);
+	});
+
+	it("falls back to the scaled declared box when fit bounds finds nothing to frame", async () => {
+		open({ declared, scale: 2, slots: [] });
+		expect(await render({ fit: "bounds" })).toMatchObject({ width: 200, height: 400 });
+	});
+
+	it("frames to the declared box for piece and shared fits without a box", async () => {
+		open({ declared, slots: [{ name: "coin", at: sliding }] });
+		expect(await render({ fit: "piece" })).toMatchObject({ width: 100, height: 200 });
+		expect(await render({ fit: "shared" })).toMatchObject({ width: 100, height: 200 });
 	});
 });
 

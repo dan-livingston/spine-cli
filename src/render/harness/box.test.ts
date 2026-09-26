@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-	boundsOf,
-	declaredBoxScaled,
-	frameBox,
-	outputSize,
-	unionBox,
-} from "#/render/harness/box.ts";
+import { boundsOf, declaredBoxScaled, outputSize, unionBox } from "#/render/harness/box.ts";
 import { still, stubSession } from "#/test/harness-fixtures.ts";
 
 describe("unionBox", () => {
@@ -92,27 +86,5 @@ describe("declaredBoxScaled", () => {
 			scale: 0.5,
 		});
 		expect(declaredBoxScaled(session)).toEqual({ x: -25, y: -5, width: 50, height: 100 });
-	});
-});
-
-describe("frameBox", () => {
-	const declared = { x: -50, y: 0, width: 100, height: 200 };
-	const body = { x: -5, y: 0, width: 10, height: 20 };
-
-	it("frames to the current bounds for fit bounds", () => {
-		const { session } = stubSession({ declared, slots: [{ name: "body", at: still(body) }] });
-		expect(frameBox(session, "bounds")).toEqual(body);
-	});
-
-	it("falls back to the scaled declared box when bounds are empty", () => {
-		const { session } = stubSession({ declared, scale: 2, slots: [] });
-		expect(frameBox(session, "bounds")).toEqual({ x: -100, y: 0, width: 200, height: 400 });
-	});
-
-	it("uses the declared box for every other fit", () => {
-		const { session } = stubSession({ declared, slots: [{ name: "body", at: still(body) }] });
-		expect(frameBox(session, "declared")).toEqual(declared);
-		expect(frameBox(session, "piece")).toEqual(declared);
-		expect(frameBox(session, "shared")).toEqual(declared);
 	});
 });

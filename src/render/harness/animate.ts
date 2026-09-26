@@ -10,13 +10,7 @@ import type {
 } from "#/render/harness/contract.ts";
 import type { Session } from "#/render/harness/session.ts";
 
-import {
-	boundsOf,
-	declaredBoxScaled,
-	frameBox,
-	outputSize,
-	unionBox,
-} from "#/render/harness/box.ts";
+import { boundsOf, declaredBoxScaled, outputSize, unionBox } from "#/render/harness/box.ts";
 import { containBoxInView, renderFrame, sizeCanvas } from "#/render/harness/draw.ts";
 import { sessionFor } from "#/render/harness/session.ts";
 
@@ -67,11 +61,8 @@ export async function renderAnimation(id: number, req: RenderRequest): Promise<R
 	const s = sessionFor(id);
 	const anim = animationFor(s, req.animation);
 
-	applySkin(s, req.skin);
-	s.state.setAnimation(0, req.animation, clipRunsPastAnimation(req, anim));
-	poseAfter(s, undefined, 0);
-
-	const box = req.box ?? frameBox(s, req.fit);
+	const box = framingBox(s, req, anim);
+	startClip(s, req, anim);
 	const size = outputSize(box, req.width, req.height);
 	sizeCanvas(s, size.width, size.height);
 	containBoxInView(s, box, size.width, size.height);
@@ -82,6 +73,23 @@ export async function renderAnimation(id: number, req: RenderRequest): Promise<R
 		frames.push(renderFrame(s, size.width, size.height, req));
 	});
 	return { width: size.width, height: size.height, frames };
+}
+
+function startClip(s: Session, req: RenderRequest, anim: spine42.Animation): void {
+	applySkin(s, req.skin);
+	s.state.setAnimation(0, req.animation, clipRunsPastAnimation(req, anim));
+	poseAfter(s, undefined, 0);
+}
+
+function framingBox(s: Session, req: RenderRequest, anim: spine42.Animation): Box {
+	if (req.box) return req.box;
+	if (req.fit !== "bounds") return declaredBoxScaled(s);
+	startClip(s, req, anim);
+	let union: Box | null = null;
+	forEachPose(s, req.skin, clipTimes(req, anim), () => {
+		union = unionBox(union, boundsOf(s));
+	});
+	return union ?? declaredBoxScaled(s);
 }
 
 function detachSlotsOutsidePiece(s: Session, slots: string[] | undefined): void {
