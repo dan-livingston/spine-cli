@@ -70,6 +70,9 @@ describe("parseColor", () => {
 		expect(parseColor("rgb(1,2,3,4,5)")).toBeNull();
 		expect(parseColor("rgb(a,b,c)")).toBeNull();
 		expect(parseColor("rgb(1,2,3")).toBeNull();
+		expect(parseColor("rgb(0x10,0,0)")).toBeNull();
+		expect(parseColor("rgb(1e2,0,0)")).toBeNull();
+		expect(parseColor("rgb(-1,0,0)")).toBeNull();
 	});
 
 	it("returns null for unknown words", () => {
@@ -77,19 +80,19 @@ describe("parseColor", () => {
 		expect(parseColor("")).toBeNull();
 	});
 
-	it.fails("needs fix: hex with a junk digit after a valid one is accepted as a color", () => {
+	it("rejects hex with a junk digit after a valid one", () => {
 		expect(parseColor("#1g2345")).toBeNull();
 	});
 
-	it.fails("needs fix: hex with a sign character is parsed into a negative channel", () => {
+	it("rejects hex with a sign character", () => {
 		expect(parseColor("#-10000")).toBeNull();
 	});
 
-	it.fails("needs fix: rgb() with empty channels is read as black instead of rejected", () => {
+	it("rejects rgb() with empty channels", () => {
 		expect(parseColor("rgb(,,)")).toBeNull();
 	});
 
-	it.fails("needs fix: rgb() with a trailing comma reads the empty alpha as fully transparent", () => {
+	it("rejects rgb() with a trailing comma", () => {
 		expect(parseColor("rgb(255, 0, 0,)")).toBeNull();
 	});
 });

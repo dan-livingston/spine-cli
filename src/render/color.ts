@@ -28,7 +28,12 @@ export function parseColor(raw: string): Rgba | null {
 	return null;
 }
 
+const HEX_DIGITS = /^[0-9a-f]+$/;
+
+const DECIMAL = /^\d*\.?\d+$/;
+
 function parseHex(hex: string): Rgba | null {
+	if (!HEX_DIGITS.test(hex)) return null;
 	let r: number;
 	let g: number;
 	let b: number;
@@ -53,6 +58,7 @@ function parseHex(hex: string): Rgba | null {
 function parseRgbFn(body: string): Rgba | null {
 	const parts = body.split(",").map((p) => p.trim());
 	if (parts.length < 3 || parts.length > 4) return null;
+	if (!parts.every((p) => DECIMAL.test(p))) return null;
 	const [r, g, b] = parts.map((p) => Number(p));
 	const a = parts.length === 4 ? Number(parts[3]) : 1;
 	if ([r, g, b, a].some((n) => Number.isNaN(n))) return null;
