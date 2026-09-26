@@ -29,7 +29,11 @@ export async function writeClip(io: Io, job: Job, clip: Clip, params: RunParams)
 		await io.files.write(path, encodeGif(frames, params.fps));
 	} else if (params.format === "mp4" || params.format === "webm") {
 		if (!params.ffmpeg) throw new Error("ffmpeg unavailable");
-		await encodeVideo(io.processes, params.ffmpeg, path, frames, params.fps, params.format);
+		await encodeVideo(io.processes, params.ffmpeg, path, frames, {
+			fps: params.fps,
+			format: params.format,
+			background: params.background,
+		});
 	} else if (params.format === "webp") {
 		if (!params.img2webp) throw new Error("img2webp unavailable");
 		await encodeWebp(io, params.img2webp, path, frames, params.fps, params.lossyQuality);
