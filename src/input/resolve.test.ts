@@ -277,7 +277,7 @@ describe("resolveInputs", () => {
 		expect(fromGlob.map((i) => i.skeletonName)).toEqual(expected);
 	});
 
-	it.fails("needs fix: a glob that matches a directory named *.json reports it as a skipped skeleton", async () => {
+	it("leaves a directory named *.json out of glob matches", async () => {
 		const onSkip = vi.fn();
 		const inputs = await resolveInputs(batch(), "/proj/*", undefined, onSkip);
 		expect(inputs.map((i) => i.skeletonName)).toEqual(["alpha", "zeta"]);

@@ -63,9 +63,10 @@ export async function resolveInputs(
 
 async function collectJsonPaths(files: Files, target: string): Promise<string[]> {
 	if (isGlob(target)) {
-		const matches = await files.glob(target);
+		const matches = (await files.glob(target)).filter((entry) => entry.endsWith(".json"));
+		const kinds = await Promise.all(matches.map((entry) => files.kindOf(entry)));
 		return matches
-			.filter((entry) => entry.endsWith(".json"))
+			.filter((_, i) => kinds[i] === "file")
 			.map((entry) => resolve(entry))
 			.sort();
 	}
