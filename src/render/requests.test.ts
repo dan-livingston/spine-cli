@@ -28,6 +28,14 @@ describe("buildRequest", () => {
 		}
 	});
 
+	it("renders every frame for a png sheet, not the still at --frame", () => {
+		const req = buildRequest(
+			"run",
+			params({ format: "png", frame: 0.5, sheet: { padding: 0 } }),
+		);
+		expect(req.times).toBeUndefined();
+	});
+
 	it("uses 0 as the no-duration sentinel so the animation length applies", () => {
 		expect(buildRequest("run", params()).duration).toBe(0);
 		expect(buildRequest("run", params({ duration: 2.5 })).duration).toBe(2.5);

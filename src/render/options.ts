@@ -1,5 +1,6 @@
 import type { Format } from "#/render/formats.ts";
 import type { Fit, Rgba } from "#/render/harness/contract.ts";
+import type { SheetParams } from "#/render/sheet.ts";
 
 import { parseColor, TRANSPARENT } from "#/render/color.ts";
 import { FORMAT_NAMES, formatSpec, formatsWhere, isFormat, listOf } from "#/render/formats.ts";
@@ -72,6 +73,18 @@ export function parseWebpLossyQuality(
 	return parseOptionalNumber(value, "quality", { min: 0, max: 100, integer: true });
 }
 
+export function parseSheet(options: SheetOptions, format: Format): SheetParams | undefined {
+	if (!options.sheet) return undefined;
+	if (!formatSpec(format).sheet) {
+		const sheets = listOf(
+			formatsWhere((spec) => spec.sheet !== undefined),
+			"and",
+		);
+		throw new Error(`--sheet only applies to ${sheets}; ${format} cannot write a sheet`);
+	}
+	return { padding: 0 };
+}
+
 const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };
 
 export function parseBackground(value: string | undefined, format: Format): Rgba {
@@ -87,7 +100,11 @@ export function parseBackground(value: string | undefined, format: Format): Rgba
 	return color;
 }
 
-export interface RenderOptions {
+export interface SheetOptions {
+	sheet?: boolean;
+}
+
+export interface RenderOptions extends SheetOptions {
 	atlas?: string;
 	animation?: string;
 	format?: string;

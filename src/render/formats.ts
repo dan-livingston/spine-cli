@@ -6,7 +6,7 @@ import { encodeApng } from "#/encode/apng.ts";
 import { encodeGif } from "#/encode/gif.ts";
 import { encodePng, writePngSequence } from "#/encode/png.ts";
 import { encodeVideo } from "#/encode/video.ts";
-import { encodeWebp } from "#/encode/webp.ts";
+import { encodeWebp, encodeWebpStill } from "#/encode/webp.ts";
 
 export interface EncodeSettings {
 	fps: number;
@@ -26,12 +26,17 @@ export interface Encode {
 	settings: EncodeSettings;
 }
 
+interface SheetSpec {
+	encode(encode: Encode): Promise<void>;
+}
+
 interface FormatSpec {
 	extension?: string;
 	alpha: true | { instead: string };
 	still: boolean;
 	lossyQuality: boolean;
 	tool?: Tool;
+	sheet?: SheetSpec;
 	encode(encode: Encode): Promise<void>;
 }
 
@@ -45,6 +50,10 @@ async function writeFile(io: Io, path: string, bytes: Uint8Array): Promise<void>
 	await io.files.write(path, bytes);
 }
 
+function writeFirstPng({ io, path, frames }: Encode): Promise<void> {
+	return writeFile(io, path, encodePng(frames[0]));
+}
+
 const FORMATS = {
 	pngseq: {
 		...animated,
@@ -54,7 +63,8 @@ const FORMATS = {
 		...animated,
 		extension: ".png",
 		still: true,
-		encode: ({ io, path, frames }) => writeFile(io, path, encodePng(frames[0])),
+		sheet: { encode: writeFirstPng },
+		encode: writeFirstPng,
 	},
 	gif: {
 		...animated,
@@ -91,6 +101,10 @@ const FORMATS = {
 		extension: ".webp",
 		lossyQuality: true,
 		tool: IMG2WEBP,
+		sheet: {
+			encode: ({ io, path, frames, settings }) =>
+				encodeWebpStill(io, IMG2WEBP.command, path, frames[0], settings.lossyQuality),
+		},
 		encode: ({ io, path, frames, settings }) =>
 			encodeWebp(io, IMG2WEBP.command, path, frames, settings.fps, settings.lossyQuality),
 	},

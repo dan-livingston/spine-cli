@@ -58,6 +58,7 @@ program
 	.option("--loops <n>", "loop the animation n times")
 	.option("--frame <t>", "single still at time t seconds (for --format png)")
 	.option("--background <color>", "css color or 'transparent' (default transparent)")
+	.option("--sheet", "write every frame into one png or webp spritesheet")
 	.option("--quality <n>", "webp lossy quality 0-100 (omit for lossless)")
 	.option("--concurrency <n>", "parallel skeletons in batch (default 1)")
 	.option("--dry-run", "list what would be written without rendering")

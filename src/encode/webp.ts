@@ -20,13 +20,9 @@ export async function encodeWebp(
 ): Promise<void> {
 	if (frames.length === 0) throw new Error("no frames to encode");
 	const delayMs = String(Math.max(1, Math.round(1000 / fps)));
-	const dir = await io.files.makeTempDir("spine-webp-");
-	try {
-		const files = await writeFrameFiles(io.files, dir, frames);
-		const compression =
-			lossyQuality === undefined ? ["-lossless"] : ["-lossy", "-q", String(lossyQuality)];
+	await withFrameFiles(io.files, frames, async (files) => {
 		const eachFrameWithItsOwnOptions = files.flatMap((file) => [
-			...compression,
+			...compression(lossyQuality),
 			"-d",
 			delayMs,
 			file,
@@ -38,13 +34,36 @@ export async function encodeWebp(
 			"-o",
 			out,
 		]);
-	} finally {
-		await io.files.remove(dir);
-	}
+	});
 }
 
-async function writeFrameFiles(files: Files, dir: string, frames: Frame[]): Promise<string[]> {
-	const paths = frames.map((_, i) => join(dir, sequenceFileName(i, frames.length)));
-	await Promise.all(frames.map((frame, i) => files.write(paths[i], encodePng(frame))));
-	return paths;
+export async function encodeWebpStill(
+	io: Io,
+	img2webp: string,
+	out: string,
+	frame: Frame,
+	lossyQuality?: number,
+): Promise<void> {
+	await withFrameFiles(io.files, [frame], async ([file]) => {
+		await io.processes.run(img2webp, [...compression(lossyQuality), file, "-o", out]);
+	});
+}
+
+function compression(lossyQuality: number | undefined): string[] {
+	return lossyQuality === undefined ? ["-lossless"] : ["-lossy", "-q", String(lossyQuality)];
+}
+
+async function withFrameFiles(
+	files: Files,
+	frames: Frame[],
+	use: (paths: string[]) => Promise<void>,
+): Promise<void> {
+	const dir = await files.makeTempDir("spine-webp-");
+	try {
+		const paths = frames.map((_, i) => join(dir, sequenceFileName(i, frames.length)));
+		await Promise.all(frames.map((frame, i) => files.write(paths[i], encodePng(frame))));
+		await use(paths);
+	} finally {
+		await files.remove(dir);
+	}
 }

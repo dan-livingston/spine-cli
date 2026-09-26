@@ -5,7 +5,12 @@ import type { RunParams } from "#/render/requests.ts";
 
 import { openClipWriter } from "#/render/clip-writer.ts";
 import { FORMAT_NAMES } from "#/render/formats.ts";
-import { parseBackground, parseFormat, parseWebpLossyQuality } from "#/render/options.ts";
+import {
+	parseBackground,
+	parseFormat,
+	parseSheet,
+	parseWebpLossyQuality,
+} from "#/render/options.ts";
 import { planOutput } from "#/render/output-path.ts";
 import { buildRequest } from "#/render/requests.ts";
 import { fakeEnv } from "#/test/fake-env.ts";
@@ -28,6 +33,7 @@ interface Row {
 	opaqueOnly: boolean;
 	quality: boolean;
 	still: boolean;
+	sheet: boolean;
 	tool?: string;
 	missing?: string;
 }
@@ -41,6 +47,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: false,
 		still: false,
+		sheet: false,
 	},
 	{
 		format: "png",
@@ -50,6 +57,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: false,
 		still: true,
+		sheet: true,
 	},
 	{
 		format: "gif",
@@ -59,6 +67,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: false,
 		still: false,
+		sheet: false,
 	},
 	{
 		format: "apng",
@@ -68,6 +77,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: false,
 		still: false,
+		sheet: false,
 	},
 	{
 		format: "mp4",
@@ -77,6 +87,7 @@ const ROWS: Row[] = [
 		opaqueOnly: true,
 		quality: false,
 		still: false,
+		sheet: false,
 		tool: "ffmpeg",
 		missing: `ffmpeg not found on PATH; install ffmpeg to render mp4. ${WITHOUT_TOOLS}`,
 	},
@@ -88,6 +99,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: false,
 		still: false,
+		sheet: false,
 		tool: "ffmpeg",
 		missing: `ffmpeg not found on PATH; install ffmpeg to render webm. ${WITHOUT_TOOLS}`,
 	},
@@ -99,6 +111,7 @@ const ROWS: Row[] = [
 		opaqueOnly: false,
 		quality: true,
 		still: false,
+		sheet: true,
 		tool: "img2webp",
 		missing: `img2webp not found on PATH; install libwebp to render webp. ${WITHOUT_TOOLS}`,
 	},
@@ -166,6 +179,17 @@ describe("output formats", () => {
 
 	it.each(ROWS)("renders $format as a still only if it is one", ({ format, still }) => {
 		expect(buildRequest("run", params(format)).times).toEqual(still ? [0.5] : undefined);
+	});
+
+	it.each(ROWS)("accepts --sheet for $format only if it writes a sheet", ({ format, sheet }) => {
+		if (sheet) {
+			expect(parseSheet({ sheet: true }, format)).toEqual({ padding: 0 });
+		} else {
+			expect(() => parseSheet({ sheet: true }, format)).toThrow(
+				`--sheet only applies to png and webp; ${format} cannot write a sheet`,
+			);
+		}
+		expect(parseSheet({}, format)).toBeUndefined();
 	});
 
 	it.each(ROWS)(

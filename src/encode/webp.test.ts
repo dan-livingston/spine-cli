@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Rgba } from "#/test/encode-fixtures.ts";
 
-import { encodeWebp } from "#/encode/webp.ts";
+import { encodeWebp, encodeWebpStill } from "#/encode/webp.ts";
 import { BLUE, CLEAR, RED, frameOf, pixelsOf, solidFrame } from "#/test/encode-fixtures.ts";
 import { readPng } from "#/test/encode-png-reader.ts";
 import { fakeEnv } from "#/test/fake-env.ts";
@@ -120,5 +120,33 @@ describe("encodeWebp", () => {
 		expect([...names].sort()).toEqual(names);
 		expect(names[0]).toMatch(/00001\.png$/);
 		expect(names.at(-1)).toMatch(/10000\.png$/);
+	});
+});
+
+describe("encodeWebpStill", () => {
+	it("hands img2webp one lossless png with no animation options", async () => {
+		const { env, seen, files } = setup();
+		await encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0]);
+		expect(seen).toHaveLength(1);
+		const [{ args, inputs }] = seen;
+		expect(inputs).toEqual([pixelsOf(clip[0].data)]);
+		expect(args).toEqual(["-lossless", pngArgs(args)[0], "-o", "/out/sheet.webp"]);
+		expect(files.filePaths()).toEqual([]);
+	});
+
+	it("applies lossy quality", async () => {
+		const { env, seen } = setup();
+		await encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0], 90);
+		const { args } = seen[0];
+		expect(args.slice(0, 3)).toEqual(["-lossy", "-q", "90"]);
+	});
+
+	it("removes its temporary frame when img2webp fails", async () => {
+		const { env, files, processes } = setup();
+		processes.fail("img2webp", "too big");
+		await expect(encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0])).rejects.toThrow(
+			"img2webp exited 1: too big",
+		);
+		expect(files.filePaths()).toEqual([]);
 	});
 });

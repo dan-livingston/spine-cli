@@ -7,6 +7,7 @@ import {
 	parseFormat,
 	parseNumber,
 	parseOptionalNumber,
+	parseSheet,
 	parseWebpLossyQuality,
 } from "#/render/options.ts";
 import { assertDistinctPieceNames } from "#/render/pieces.ts";
@@ -38,6 +39,7 @@ export function parseRenderSettings(options: RenderOptions): RenderSettings {
 		skin: options.skin,
 		background: parseBackground(options.background, format),
 		lossyQuality: parseWebpLossyQuality(options.quality, format),
+		sheet: parseSheet(options, format),
 		atlas: options.atlas,
 		animation: options.animation,
 		out: options.out,

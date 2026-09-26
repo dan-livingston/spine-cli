@@ -1,5 +1,6 @@
 import type { Format } from "#/render/formats.ts";
 import type { Fit, RenderRequest, Rgba } from "#/render/harness/contract.ts";
+import type { SheetParams } from "#/render/sheet.ts";
 
 import { formatSpec } from "#/render/formats.ts";
 
@@ -16,6 +17,7 @@ export interface RunParams {
 	background: Rgba;
 	format: Format;
 	lossyQuality?: number;
+	sheet?: SheetParams;
 }
 
 export interface PieceFraming {
@@ -28,7 +30,7 @@ export function buildRequest(
 	params: RunParams,
 	framing: PieceFraming = {},
 ): RenderRequest {
-	const isSingleStill = formatSpec(params.format).still;
+	const isSingleStill = formatSpec(params.format).still && !params.sheet;
 	return {
 		animation,
 		skin: params.skin,
