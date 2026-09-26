@@ -23,41 +23,49 @@ export function parseFit(value: string | undefined, hasPieces: boolean): Fit {
 	return value;
 }
 
-interface NumberBounds {
+interface NumberSpec {
 	min?: number;
 	exclusiveMin?: boolean;
 	max?: number;
+	integer?: boolean;
 }
 
 export function parseNumber(
 	value: string | undefined,
 	name: string,
 	fallback: number,
-	bounds: NumberBounds,
+	spec: NumberSpec,
 ): number {
-	if (value === undefined) return fallback;
+	return parseOptionalNumber(value, name, spec) ?? fallback;
+}
+
+export function parseOptionalNumber(
+	value: string | undefined,
+	name: string,
+	spec: NumberSpec,
+): number | undefined {
+	if (value === undefined) return undefined;
 	const n = value.trim() === "" ? Number.NaN : Number(value);
 	if (!Number.isFinite(n)) throw new Error(`--${name} must be a number, got "${value}"`);
-	if (bounds.min !== undefined) {
-		if (bounds.exclusiveMin ? n <= bounds.min : n < bounds.min) {
-			throw new Error(`--${name} must be ${bounds.exclusiveMin ? ">" : ">="} ${bounds.min}`);
+	if (spec.min !== undefined) {
+		if (spec.exclusiveMin ? n <= spec.min : n < spec.min) {
+			throw new Error(`--${name} must be ${spec.exclusiveMin ? ">" : ">="} ${spec.min}`);
 		}
 	}
-	if (bounds.max !== undefined && n > bounds.max) {
-		throw new Error(`--${name} must be <= ${bounds.max}`);
+	if (spec.max !== undefined && n > spec.max) {
+		throw new Error(`--${name} must be <= ${spec.max}`);
 	}
-	return n;
+	return spec.integer ? Math.round(n) : n;
 }
 
 export function parseWebpLossyQuality(
 	value: string | undefined,
 	format: Format,
 ): number | undefined {
-	if (value === undefined) return undefined;
-	if (format !== "webp") {
+	if (value !== undefined && format !== "webp") {
 		throw new Error(`--quality only applies to webp; ${format} has no lossy quality knob`);
 	}
-	return Math.round(parseNumber(value, "quality", 0, { min: 0, max: 100 }));
+	return parseOptionalNumber(value, "quality", { min: 0, max: 100, integer: true });
 }
 
 const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, a: 1 };

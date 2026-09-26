@@ -8,17 +8,10 @@ import type { RunParams } from "#/render/requests.ts";
 
 import { findExternalEncoders } from "#/encode/external.ts";
 import { resolveInputs } from "#/input/resolve.ts";
-import {
-	parseBackground,
-	parseFit,
-	parseFormat,
-	parseNumber,
-	parseWebpLossyQuality,
-} from "#/render/options.ts";
-import { assertDistinctPieceNames } from "#/render/pieces.ts";
 import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
 import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
 import { sessionConfig } from "#/render/session-config.ts";
+import { parseRenderSettings } from "#/render/settings.ts";
 import { writeClip } from "#/render/write-clip.ts";
 
 export async function renderCommand(
@@ -26,30 +19,7 @@ export async function renderCommand(
 	target: string,
 	options: RenderOptions,
 ): Promise<void> {
-	const format = parseFormat(options.format);
-	const fps = parseNumber(options.fps, "fps", 30, { min: 1 });
-	const scale = parseNumber(options.scale, "scale", 1, { min: 0, exclusiveMin: true });
-	const loops = Math.round(parseNumber(options.loops, "loops", 1, { min: 1 }));
-	const frame = parseNumber(options.frame, "frame", 0, { min: 0 });
-	const concurrency = Math.round(parseNumber(options.concurrency, "concurrency", 1, { min: 1 }));
-	const width =
-		options.width !== undefined
-			? Math.round(parseNumber(options.width, "width", 0, { min: 1 }))
-			: undefined;
-	const height =
-		options.height !== undefined
-			? Math.round(parseNumber(options.height, "height", 0, { min: 1 }))
-			: undefined;
-	const duration =
-		options.duration !== undefined
-			? parseNumber(options.duration, "duration", 0, { min: 0, exclusiveMin: true })
-			: undefined;
-	const pieceSpecs = options.piece ?? [];
-	const fit = parseFit(options.fit, pieceSpecs.length > 0);
-	const background = parseBackground(options.background, format);
-	const lossyQuality = parseWebpLossyQuality(options.quality, format);
-
-	assertDistinctPieceNames(pieceSpecs);
+	const { concurrency, pieceSpecs, dryRun, ...settings } = parseRenderSettings(options);
 
 	const inputs = await resolveInputs(env.files, target, options.atlas, (path, reason) => {
 		console.warn(`skip ${path}: ${reason}`);
@@ -59,7 +29,7 @@ export async function renderCommand(
 		batch: inputs.length > 1,
 		animation: options.animation,
 		pieceSpecs,
-		format,
+		format: settings.format,
 		out: options.out,
 		outDir: options.outDir,
 	});
@@ -71,28 +41,17 @@ export async function renderCommand(
 	}
 	assertNoOutputCollisions(jobs);
 
-	if (options.dryRun) {
+	if (dryRun) {
 		printDryRun(jobs);
 		return;
 	}
 
-	const encoders = await findExternalEncoders(env.processes, format);
+	const encoders = await findExternalEncoders(env.processes, settings.format);
 	const pool = await env.launchRenderPool();
 	try {
 		const jobsBySkeleton = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
 		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
-			scale,
-			fps,
-			loops,
-			frame,
-			duration,
-			fit,
-			width,
-			height,
-			skin: options.skin,
-			background,
-			format,
-			lossyQuality,
+			...settings,
 			...encoders,
 		});
 	} finally {

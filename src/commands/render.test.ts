@@ -186,35 +186,11 @@ describe("renderCommand with one skeleton", () => {
 });
 
 describe("renderCommand option errors", () => {
-	it.each([
-		[{ fps: "fast" }, '--fps must be a number, got "fast"'],
-		[{ fps: "0.5" }, "--fps must be >= 1"],
-		[{ scale: "0" }, "--scale must be > 0"],
-		[{ width: "0.4" }, "--width must be >= 1"],
-		[{ width: "" }, '--width must be a number, got ""'],
-		[{ height: " " }, '--height must be a number, got " "'],
-		[{ duration: "" }, '--duration must be a number, got ""'],
-		[{ duration: "0" }, "--duration must be > 0"],
-		[{ loops: "0" }, "--loops must be >= 1"],
-		[{ frame: "-1" }, "--frame must be >= 0"],
-		[{ concurrency: "0" }, "--concurrency must be >= 1"],
-		[{ format: "jpg" }, 'unknown format "jpg"; use pngseq, png, gif, apng, mp4, webm or webp'],
-		[{ fit: "shared" }, "--fit shared needs at least one --piece"],
-		[
-			{ format: "gif", quality: "80" },
-			"--quality only applies to webp; gif has no lossy quality knob",
-		],
-		[
-			{ format: "mp4", background: "transparent" },
-			'mp4 has no alpha channel; --background must be opaque (got "transparent"); use webm for transparency',
-		],
-		[
-			{ piece: ["head*", "head"] },
-			'--piece "head*" and "head" both map to output name "head"; rename one',
-		],
-	])("rejects %o before rendering", async (options, message) => {
+	it("rejects a bad flag before launching the browser", async () => {
 		const { env, launches } = heroEnv();
-		await expect(renderCommand(env, TARGET, options)).rejects.toThrow(message);
+		await expect(renderCommand(env, TARGET, { fps: "fast" })).rejects.toThrow(
+			'--fps must be a number, got "fast"',
+		);
 		expect(launches()).toBe(0);
 	});
 

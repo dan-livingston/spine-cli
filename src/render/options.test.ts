@@ -5,6 +5,7 @@ import {
 	parseFit,
 	parseFormat,
 	parseNumber,
+	parseOptionalNumber,
 	parseWebpLossyQuality,
 } from "#/render/options.ts";
 
@@ -95,6 +96,27 @@ describe("parseNumber", () => {
 
 	it("rejects an empty value as not a number", () => {
 		expect(() => parseNumber("", "frame", 0, { min: 0 })).toThrow("--frame must be a number");
+	});
+});
+
+describe("parseOptionalNumber", () => {
+	it("is undefined only when the flag is absent", () => {
+		expect(parseOptionalNumber(undefined, "width", { min: 1 })).toBeUndefined();
+		expect(() => parseOptionalNumber("", "width", { min: 1 })).toThrow(
+			'--width must be a number, got ""',
+		);
+	});
+
+	it("rounds an integer flag after checking its bounds", () => {
+		expect(parseOptionalNumber("10.6", "width", { min: 1, integer: true })).toBe(11);
+		expect(parseOptionalNumber("10.4", "width", { min: 1, integer: true })).toBe(10);
+		expect(() => parseOptionalNumber("0.6", "width", { min: 1, integer: true })).toThrow(
+			"--width must be >= 1",
+		);
+	});
+
+	it("keeps fractions when not an integer flag", () => {
+		expect(parseOptionalNumber("1.5", "duration", { min: 0, exclusiveMin: true })).toBe(1.5);
 	});
 });
 
