@@ -61,12 +61,12 @@ export async function renderCommand(
 		outDir: options.outDir,
 	});
 	if (jobs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);
-	assertNoOutputCollisions(jobs);
 	if (options.out && jobs.length > 1) {
 		throw new Error(
 			`--out writes a single output but ${jobs.length} are planned; use --out-dir`,
 		);
 	}
+	assertNoOutputCollisions(jobs);
 
 	if (options.dryRun) {
 		printDryRun(jobs);

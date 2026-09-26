@@ -271,7 +271,7 @@ describe("renderCommand option errors", () => {
 		);
 	});
 
-	it.fails("needs fix: --out with several planned outputs reports a self-collision instead of pointing to --out-dir", async () => {
+	it("points to --out-dir when --out would get several outputs", async () => {
 		const { env, files } = heroEnv({ animations: ["idle", "run"] });
 		await expect(
 			renderCommand(env, TARGET, { animation: "all", format: "gif", out: "/x.gif" }),
