@@ -45,14 +45,23 @@ describe("renderCommand --sheet", () => {
 		expect({ width: png.width, height: png.height }).toEqual({ width: 12, height: 2 });
 	});
 
-	it("writes a webp sheet as one still through img2webp", async () => {
-		const { env, processes } = clipEnv(3, 2, 4, ["img2webp"]);
+	it("writes a webp sheet as one still through cwebp", async () => {
+		const { env, processes } = clipEnv(3, 2, 4, ["cwebp"]);
 		await renderCommand(env, TARGET, { format: "webp", sheet: true, quality: "90" });
 
-		const [run] = processes.runsOf("img2webp");
-		expect(run.args.slice(0, 3)).toEqual(["-lossy", "-q", "90"]);
+		const [run] = processes.runsOf("cwebp");
+		expect(run.args.slice(0, 3)).toEqual(["-quiet", "-q", "90"]);
 		expect(run.args).not.toContain("-loop");
 		expect(run.args.slice(-2)).toEqual(["-o", resolve("/proj/hero_idle.webp")]);
+	});
+
+	it("needs cwebp, not img2webp, for a webp sheet", async () => {
+		const { env, processes, launches } = clipEnv(3, 2, 4, ["img2webp"]);
+		await expect(renderCommand(env, TARGET, { format: "webp", sheet: true })).rejects.toThrow(
+			"cwebp not found on PATH; install libwebp to render webp",
+		);
+		expect(processes.versionChecks).toEqual(["cwebp"]);
+		expect(launches()).toBe(0);
 	});
 
 	it("refuses --sheet for a format with no still before loading a skeleton", async () => {
@@ -118,18 +127,18 @@ describe("renderCommand --sheet size limits", () => {
 		'hero: sheet for animation "idle" is 16384x1 px, over the webp limit of 16383 px a side; use a smaller --scale, a lower --fps, or --rows/--columns';
 
 	it("refuses a webp sheet wider than webp allows before encoding", async () => {
-		const { env, files, processes } = clipEnv(8192, 1, 2, ["img2webp"]);
+		const { env, files, processes } = clipEnv(8192, 1, 2, ["cwebp"]);
 		await expect(renderCommand(env, TARGET, { format: "webp", sheet: true })).rejects.toThrow(
 			TOO_WIDE_FOR_WEBP,
 		);
-		expect(processes.runsOf("img2webp")).toEqual([]);
+		expect(processes.runsOf("cwebp")).toEqual([]);
 		expect(files.writtenPaths()).toEqual([]);
 	});
 
 	it("accepts a webp sheet at the limit", async () => {
-		const { env, processes } = clipEnv(1, 16383, 1, ["img2webp"]);
+		const { env, processes } = clipEnv(1, 16383, 1, ["cwebp"]);
 		await renderCommand(env, TARGET, { format: "webp", sheet: true });
-		expect(processes.runsOf("img2webp")).toHaveLength(1);
+		expect(processes.runsOf("cwebp")).toHaveLength(1);
 	});
 
 	it("writes a png sheet over 8192 px and warns about its size", async () => {
@@ -153,7 +162,7 @@ describe("renderCommand --sheet size limits", () => {
 		seedSkeleton(files, "/proj", "boss");
 		const { env, processes } = fakeEnv({
 			files,
-			processes: { installed: ["img2webp"] },
+			processes: { installed: ["cwebp"] },
 			pool: {
 				clip: (_, session) =>
 					session.config.atlasText.startsWith("hero")
@@ -166,7 +175,7 @@ describe("renderCommand --sheet size limits", () => {
 		expect(warnings).toEqual([
 			`skip ${resolve("/proj/hero.json")}: ${TOO_WIDE_FOR_WEBP.replace("hero: ", "")}`,
 		]);
-		expect(processes.runsOf("img2webp").map((r) => r.args.at(-1))).toEqual([
+		expect(processes.runsOf("cwebp").map((r) => r.args.at(-1))).toEqual([
 			resolve("/proj/boss_idle.webp"),
 		]);
 	});

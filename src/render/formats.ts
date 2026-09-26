@@ -28,6 +28,7 @@ export interface Encode {
 }
 
 export interface SheetSpec {
+	tool?: Tool;
 	maxSide: number;
 	oversize: "fails" | "warns";
 	encode(encode: Encode): Promise<void>;
@@ -46,6 +47,8 @@ interface FormatSpec {
 const FFMPEG: Tool = { command: "ffmpeg", installs: "ffmpeg" };
 
 const IMG2WEBP: Tool = { command: "img2webp", installs: "libwebp" };
+
+const CWEBP: Tool = { command: "cwebp", installs: "libwebp" };
 
 const animated = { alpha: true, still: false, lossyQuality: false } as const;
 
@@ -105,10 +108,11 @@ const FORMATS = {
 		lossyQuality: true,
 		tool: IMG2WEBP,
 		sheet: {
+			tool: CWEBP,
 			maxSide: 16383,
 			oversize: "fails",
 			encode: ({ io, path, frames, settings }) =>
-				encodeWebpStill(io, IMG2WEBP.command, path, frames[0], settings.lossyQuality),
+				encodeWebpStill(io, CWEBP.command, path, frames[0], settings.lossyQuality),
 		},
 		encode: ({ io, path, frames, settings }) =>
 			encodeWebp(io, IMG2WEBP.command, path, frames, settings.fps, settings.lossyQuality),

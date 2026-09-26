@@ -1,4 +1,4 @@
-import type { Encode, SheetSpec } from "#/render/formats.ts";
+import type { Encode, Format, SheetSpec } from "#/render/formats.ts";
 import type { SheetLayout, SheetParams } from "#/render/sheet.ts";
 
 import { encodeSidecar, sheetSidecar } from "#/render/sheet-sidecar.ts";
@@ -6,11 +6,11 @@ import { composeSheet, layoutClipSheet } from "#/render/sheet.ts";
 
 export class SheetTooLargeError extends Error {
 	readonly size: string;
-	readonly format: string;
+	readonly format: Format;
 	readonly maxSide: number;
 
-	constructor(layout: SheetLayout, format: string, maxSide: number) {
-		const size = `${layout.width}x${layout.height} px`;
+	constructor(layout: SheetLayout, format: Format, maxSide: number) {
+		const size = sizeOf(layout);
 		super(tooLarge("sheet", size, format, maxSide));
 		this.size = size;
 		this.format = format;
@@ -20,6 +20,10 @@ export class SheetTooLargeError extends Error {
 	describe(subject: string): string {
 		return tooLarge(subject, this.size, this.format, this.maxSide);
 	}
+}
+
+function sizeOf(layout: SheetLayout): string {
+	return `${layout.width}x${layout.height} px`;
 }
 
 function tooLarge(subject: string, size: string, format: string, maxSide: number): string {
@@ -46,6 +50,6 @@ export async function writeSheet(
 	}
 	if (!oversize) return [];
 	return [
-		`${path} is ${layout.width}x${layout.height} px; browsers and GPUs may refuse images over ${spec.maxSide} px a side`,
+		`${path} is ${sizeOf(layout)}; browsers and GPUs may refuse images over ${spec.maxSide} px a side`,
 	];
 }

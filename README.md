@@ -16,7 +16,7 @@ Requirements:
 
 - Chrome installed. Rendering runs in headless Chrome.
 - `ffmpeg` on `PATH` for `mp4` and `webm`.
-- `img2webp` (from libwebp) on `PATH` for `webp`.
+- `img2webp` (from libwebp) on `PATH` for `webp`, and `cwebp` (also from libwebp) for a `webp` sheet.
 
 `pngseq`, `png`, `gif` and `apng` need nothing extra.
 
@@ -86,7 +86,7 @@ spine-cli render hero.json -a run -f png --sheet
 spine-cli render hero.json -a run -f webp --sheet --rows 4 --padding 2 --scale 0.5
 ```
 
-`--sheet` renders every frame of the clip into one image, as a grid. It works with `png` and `webp`, the formats that write a single still. A `webp` sheet is a still image, lossless unless you pass `--quality`.
+`--sheet` renders every frame of the clip into one image, as a grid. It works with `png` and `webp`, the formats that write a single still. A `webp` sheet is a still image written by `cwebp`, lossless unless you pass `--quality`.
 
 Every cell is one frame, and all frames of a clip are the same size. Frames fill left to right, then top to bottom. By default the sheet is one row.
 

@@ -123,29 +123,38 @@ describe("encodeWebp", () => {
 	});
 });
 
+function stillSetup() {
+	const fake = fakeEnv({ files: { dirs: ["/out"] }, processes: { installed: ["cwebp"] } });
+	const seen: { args: string[]; input: Rgba[] }[] = [];
+	fake.processes.onRun("cwebp", async (run) => {
+		const [input] = pngArgs(run.args);
+		seen.push({ args: run.args, input: (await readPng(fake.files.bytes(input))).shown[0] });
+	});
+	return { ...fake, seen };
+}
+
 describe("encodeWebpStill", () => {
-	it("hands img2webp one lossless png with no animation options", async () => {
-		const { env, seen, files } = setup();
-		await encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0]);
+	it("hands cwebp one lossless png so the output is a still, not an animation", async () => {
+		const { env, seen, files } = stillSetup();
+		await encodeWebpStill(env, "cwebp", "/out/sheet.webp", clip[0]);
 		expect(seen).toHaveLength(1);
-		const [{ args, inputs }] = seen;
-		expect(inputs).toEqual([pixelsOf(clip[0].data)]);
-		expect(args).toEqual(["-lossless", pngArgs(args)[0], "-o", "/out/sheet.webp"]);
+		const [{ args, input }] = seen;
+		expect(input).toEqual(pixelsOf(clip[0].data));
+		expect(args).toEqual(["-quiet", "-lossless", pngArgs(args)[0], "-o", "/out/sheet.webp"]);
 		expect(files.filePaths()).toEqual([]);
 	});
 
 	it("applies lossy quality", async () => {
-		const { env, seen } = setup();
-		await encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0], 90);
-		const { args } = seen[0];
-		expect(args.slice(0, 3)).toEqual(["-lossy", "-q", "90"]);
+		const { env, seen } = stillSetup();
+		await encodeWebpStill(env, "cwebp", "/out/sheet.webp", clip[0], 90);
+		expect(seen[0].args.slice(0, 3)).toEqual(["-quiet", "-q", "90"]);
 	});
 
-	it("removes its temporary frame when img2webp fails", async () => {
-		const { env, files, processes } = setup();
-		processes.fail("img2webp", "too big");
-		await expect(encodeWebpStill(env, "img2webp", "/out/sheet.webp", clip[0])).rejects.toThrow(
-			"img2webp exited 1: too big",
+	it("removes its temporary frame when cwebp fails", async () => {
+		const { env, files, processes } = stillSetup();
+		processes.fail("cwebp", "too big");
+		await expect(encodeWebpStill(env, "cwebp", "/out/sheet.webp", clip[0])).rejects.toThrow(
+			"cwebp exited 1: too big",
 		);
 		expect(files.filePaths()).toEqual([]);
 	});

@@ -39,13 +39,14 @@ export async function encodeWebp(
 
 export async function encodeWebpStill(
 	io: Io,
-	img2webp: string,
+	cwebp: string,
 	out: string,
 	frame: Frame,
 	lossyQuality?: number,
 ): Promise<void> {
+	const quality = lossyQuality === undefined ? ["-lossless"] : ["-q", String(lossyQuality)];
 	await withFrameFiles(io.files, [frame], async ([file]) => {
-		await io.processes.run(img2webp, [...compression(lossyQuality), file, "-o", out]);
+		await io.processes.run(cwebp, ["-quiet", ...quality, file, "-o", out]);
 	});
 }
 
