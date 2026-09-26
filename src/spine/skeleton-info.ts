@@ -1,7 +1,6 @@
-export interface AnimationInfo {
-	name: string;
-	duration: number;
-}
+import type { AnimationInfo } from "#/spine/animation-info.ts";
+
+import { parseAnimations } from "#/spine/animation-info.ts";
 
 export interface ConstraintCounts {
 	ik: number;
@@ -59,7 +58,7 @@ export function parseSkeletonInfo(jsonText: string): SkeletonInfo {
 		}
 	}
 
-	const animations = normalizeAnimations(data.animations);
+	const animations = parseAnimations(data.animations);
 
 	return {
 		width,
@@ -108,42 +107,10 @@ function attachmentsOf(raw: unknown): SkinShape["attachments"] {
 	return {};
 }
 
-function normalizeAnimations(raw: unknown): AnimationInfo[] {
-	if (!raw || typeof raw !== "object") return [];
-	return Object.entries(raw as Record<string, unknown>).map(([name, anim]) => ({
-		name,
-		duration: round3(latestKeyframeTime(anim)),
-	}));
-}
-
-function latestKeyframeTime(node: unknown): number {
-	if (Array.isArray(node)) {
-		return largest(node.map((v) => Math.max(timelineKeyTime(v), latestKeyframeTime(v))));
-	}
-	if (node && typeof node === "object") {
-		return largest(Object.values(node).map(latestKeyframeTime));
-	}
-	return 0;
-}
-
-function largest(times: number[]): number {
-	return times.reduce((max, t) => (t > max ? t : max), 0);
-}
-
-function timelineKeyTime(element: unknown): number {
-	if (!element || typeof element !== "object" || Array.isArray(element)) return 0;
-	const time = (element as Record<string, unknown>).time;
-	return typeof time === "number" ? time : 0;
-}
-
 function arr(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
 }
 
 function num(value: unknown): number {
 	return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function round3(n: number): number {
-	return Math.round(n * 1000) / 1000;
 }

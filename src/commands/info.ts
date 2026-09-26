@@ -1,5 +1,5 @@
 import type { Files } from "#/ports/files.ts";
-import type { AnimationInfo } from "#/spine/skeleton-info.ts";
+import type { AnimationInfo } from "#/spine/animation-info.ts";
 import type { ResolvedInput } from "#/types.ts";
 
 import { resolveInput } from "#/input/resolve.ts";
@@ -64,7 +64,7 @@ function renderText(
 
 	lines.push(`${input.skeletonName}  (spine ${input.version})`);
 
-	lines.push(...animationLines(info.animations));
+	lines.push(...animationLines(info.animations, verbose));
 
 	const skinNames = info.skins.length > 0 ? info.skins.join(", ") : "(none)";
 	lines.push(`skins (${info.skins.length}): ${skinNames}`);
@@ -94,11 +94,24 @@ function renderText(
 	return lines.join("\n");
 }
 
-function animationLines(animations: AnimationInfo[]): string[] {
+function animationLines(animations: AnimationInfo[], verbose: boolean): string[] {
 	const nameWidth = Math.max(0, ...animations.map((a) => a.name.length));
 	return [
 		`animations (${animations.length}):`,
-		...animations.map((a) => `  ${a.name.padEnd(nameWidth)}  ${a.duration.toFixed(3)}s`),
+		...animations.flatMap((a) => [
+			`  ${a.name.padEnd(nameWidth)}  ${a.duration.toFixed(3)}s`,
+			...(verbose ? animationDetailLines(a) : []),
+		]),
+	];
+}
+
+function animationDetailLines(animation: AnimationInfo): string[] {
+	const t = animation.timelines;
+	const events = animation.events.length > 0 ? animation.events.join(", ") : "(none)";
+	return [
+		`    timelines: bones ${t.bones}  slots ${t.slots}  deform ${t.deform}  draw order ${t.drawOrder}` +
+			`  ik ${t.ik}  transform ${t.transform}  path ${t.path}  physics ${t.physics}`,
+		`    events: ${events}`,
 	];
 }
 

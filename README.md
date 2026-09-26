@@ -28,11 +28,11 @@ spine-cli info hero.json
 
 Prints the Spine version, animations and their durations, skins, bone, slot and attachment counts, and atlas pages. It also reports textures the atlas names but that are missing on disk.
 
-| Option           | Description                                       |
-| ---------------- | ------------------------------------------------- |
-| `--atlas <path>` | Atlas file. Found beside the skeleton if omitted. |
-| `--json`         | Print JSON.                                       |
-| `--verbose`      | Add per-animation and per-atlas-page detail.      |
+| Option           | Description                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `--atlas <path>` | Atlas file. Found beside the skeleton if omitted.                                    |
+| `--json`         | Print JSON.                                                                          |
+| `--verbose`      | Add each animation's timeline counts and events, and each atlas page's region count. |
 
 ## Render
 

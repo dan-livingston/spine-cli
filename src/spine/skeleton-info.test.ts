@@ -54,7 +54,7 @@ const hero = {
 
 describe("parseSkeletonInfo", () => {
 	it("summarises a 4.x skeleton", () => {
-		expect(parseSkeletonInfo(JSON.stringify(hero))).toEqual({
+		expect(parseSkeletonInfo(JSON.stringify(hero))).toMatchObject({
 			width: 120.5,
 			height: 240,
 			bones: 3,
@@ -83,7 +83,9 @@ describe("parseSkeletonInfo", () => {
 				},
 			},
 		});
-		expect(parseSkeletonInfo(json).animations).toEqual([{ name: "hit", duration: 3.142 }]);
+		expect(parseSkeletonInfo(json).animations).toMatchObject([
+			{ name: "hit", duration: 3.142 },
+		]);
 	});
 
 	it("reads the older object form of skins", () => {

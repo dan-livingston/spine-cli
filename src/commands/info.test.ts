@@ -3,6 +3,8 @@ import type { MockInstance } from "vite-plus/test";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { TimelineCounts } from "#/spine/animation-info.ts";
+
 import { infoCommand } from "#/commands/info.ts";
 import { FakeFiles } from "#/test/fake-files.ts";
 
@@ -83,6 +85,20 @@ function printed(): string {
 	return log.mock.calls.map((call) => call.join(" ")).join("\n");
 }
 
+function timelines(counts: Partial<TimelineCounts> = {}): TimelineCounts {
+	return {
+		bones: 0,
+		slots: 0,
+		deform: 0,
+		drawOrder: 0,
+		ik: 0,
+		transform: 0,
+		path: 0,
+		physics: 0,
+		...counts,
+	};
+}
+
 describe("infoCommand text output", () => {
 	it("prints version, aligned animations, skins, counts, constraints and atlas pages", async () => {
 		await infoCommand(heroFiles(), "/proj/hero.json", {});
@@ -111,19 +127,22 @@ describe("infoCommand text output", () => {
 		expect(out).toContain("  hero2.png  256x256  1 regions");
 	});
 
-	it.fails("needs fix: --verbose adds no per-animation detail although README promises it", async () => {
-		await infoCommand(heroFiles(), "/proj/hero.json", {});
-		const plain = printed().split("\n");
-		log.mockClear();
+	it("adds timeline counts and event names per animation with verbose", async () => {
 		await infoCommand(heroFiles(), "/proj/hero.json", { verbose: true });
-		const verbose = printed().split("\n");
 
-		const animationSection = (lines: string[]) =>
-			lines.slice(
-				lines.indexOf("animations (3):"),
-				lines.indexOf("skins (2): default, armored"),
-			);
-		expect(animationSection(verbose)).not.toEqual(animationSection(plain));
+		const lines = printed().split("\n");
+		expect(lines.slice(1, lines.indexOf("skins (2): default, armored"))).toEqual([
+			"animations (3):",
+			"  idle          1.235s",
+			"    timelines: bones 1  slots 0  deform 0  draw order 0  ik 0  transform 0  path 0  physics 0",
+			"    events: (none)",
+			"  run           0.500s",
+			"    timelines: bones 1  slots 0  deform 0  draw order 0  ik 0  transform 0  path 0  physics 0",
+			"    events: (none)",
+			"  attack_heavy  2.000s",
+			"    timelines: bones 0  slots 0  deform 0  draw order 0  ik 0  transform 0  path 0  physics 0",
+			"    events: hit",
+		]);
 	});
 
 	it("reports clipping, no animations and a single atlas page", async () => {
@@ -192,9 +211,9 @@ describe("infoCommand json output", () => {
 			hasClipping: false,
 			skins: ["default", "armored"],
 			animations: [
-				{ name: "idle", duration: 1.235 },
-				{ name: "run", duration: 0.5 },
-				{ name: "attack_heavy", duration: 2 },
+				{ name: "idle", duration: 1.235, timelines: timelines({ bones: 1 }), events: [] },
+				{ name: "run", duration: 0.5, timelines: timelines({ bones: 1 }), events: [] },
+				{ name: "attack_heavy", duration: 2, timelines: timelines(), events: ["hit"] },
 			],
 			constraints: { ik: 1, transform: 0, path: 0, physics: 2 },
 			atlas: {
