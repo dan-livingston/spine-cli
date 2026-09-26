@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { Entry } from "#/ports/files.ts";
 
-import { resolveInput, resolveInputs } from "#/input/resolve.ts";
+import { collectJsonPaths, resolveInput } from "#/input/resolve.ts";
 import { FakeFiles } from "#/test/fake-files.ts";
 
 class ReversedFiles extends FakeFiles {
@@ -219,29 +219,26 @@ describe("resolveInput", () => {
 	});
 });
 
-describe("resolveInputs", () => {
+describe("collectJsonPaths", () => {
 	const batch = (): FakeFiles =>
 		new FakeFiles({
 			files: {
 				"/proj/zeta.json": skeleton(),
-				"/proj/zeta.atlas": atlas(),
 				"/proj/alpha.json": skeleton(),
-				"/proj/alpha.atlas": atlas(),
 				"/proj/readme.txt": "x",
 				"/proj/nested/deep.json": skeleton(),
-				"/proj/nested/deep.atlas": atlas(),
 			},
 			dirs: ["/proj/folder.json"],
 		});
 
 	it("takes a single .json file", async () => {
-		const inputs = await resolveInputs(batch(), "/proj/alpha.json", undefined);
-		expect(inputs.map((i) => i.jsonPath)).toEqual([resolve("/proj/alpha.json")]);
+		expect(await collectJsonPaths(batch(), "/proj/alpha.json")).toEqual([
+			resolve("/proj/alpha.json"),
+		]);
 	});
 
 	it("searches a directory one level deep, sorted, files only", async () => {
-		const inputs = await resolveInputs(batch(), "/proj", undefined);
-		expect(inputs.map((i) => i.jsonPath)).toEqual([
+		expect(await collectJsonPaths(batch(), "/proj")).toEqual([
 			resolve("/proj/alpha.json"),
 			resolve("/proj/zeta.json"),
 		]);
@@ -250,8 +247,7 @@ describe("resolveInputs", () => {
 	it("expands a glob to sorted absolute json paths", async () => {
 		const files = batch();
 		await files.remove("/proj/folder.json");
-		const inputs = await resolveInputs(files, "/proj/**/*", undefined);
-		expect(inputs.map((i) => i.jsonPath)).toEqual([
+		expect(await collectJsonPaths(files, "/proj/**/*")).toEqual([
 			resolve("/proj/alpha.json"),
 			resolve("/proj/nested/deep.json"),
 			resolve("/proj/zeta.json"),
@@ -262,123 +258,57 @@ describe("resolveInputs", () => {
 		const files = new ReversedFiles({
 			files: {
 				"/proj/alpha.json": skeleton(),
-				"/proj/alpha.atlas": atlas(),
 				"/proj/mid.json": skeleton(),
-				"/proj/mid.atlas": atlas(),
 				"/proj/zeta.json": skeleton(),
-				"/proj/zeta.atlas": atlas(),
 			},
 		});
-		const expected = ["alpha", "mid", "zeta"];
-		const fromDir = await resolveInputs(files, "/proj", undefined);
-		const fromGlob = await resolveInputs(files, "/proj/*.json", undefined);
-		expect(fromDir.map((i) => i.skeletonName)).toEqual(expected);
-		expect(fromGlob.map((i) => i.skeletonName)).toEqual(expected);
+		const expected = ["alpha", "mid", "zeta"].map((name) => resolve(`/proj/${name}.json`));
+		expect(await collectJsonPaths(files, "/proj")).toEqual(expected);
+		expect(await collectJsonPaths(files, "/proj/*.json")).toEqual(expected);
 	});
 
 	it("leaves a directory named *.json out of glob matches", async () => {
-		const onSkip = vi.fn();
-		const inputs = await resolveInputs(batch(), "/proj/*", undefined, onSkip);
-		expect(inputs.map((i) => i.skeletonName)).toEqual(["alpha", "zeta"]);
-		expect(onSkip).not.toHaveBeenCalled();
+		expect(await collectJsonPaths(batch(), "/proj/*")).toEqual([
+			resolve("/proj/alpha.json"),
+			resolve("/proj/zeta.json"),
+		]);
 	});
 
 	it("resolves a relative glob against the working directory", async () => {
 		const cwd = resolve(".");
-		const files = new FakeFiles({
-			cwd,
-			files: { "art/hero.json": skeleton(), "art/hero.atlas": atlas() },
-		});
-		const inputs = await resolveInputs(files, "art/*.json", undefined);
-		expect(inputs.map((i) => i.jsonPath)).toEqual([resolve(cwd, "art/hero.json")]);
+		const files = new FakeFiles({ cwd, files: { "art/hero.json": skeleton() } });
+		expect(await collectJsonPaths(files, "art/*.json")).toEqual([
+			resolve(cwd, "art/hero.json"),
+		]);
 	});
 
 	it("explains a missing target, a non-json file and an empty match", async () => {
 		const files = batch();
-		await expect(resolveInputs(files, "/nowhere", undefined)).rejects.toThrow(
+		await expect(collectJsonPaths(files, "/nowhere")).rejects.toThrow(
 			"no such file or directory: /nowhere",
 		);
-		await expect(resolveInputs(files, "/proj/readme.txt", undefined)).rejects.toThrow(
+		await expect(collectJsonPaths(files, "/proj/readme.txt")).rejects.toThrow(
 			"expected a .json skeleton, got: /proj/readme.txt",
 		);
-		await expect(resolveInputs(files, "/proj/*.skel", undefined)).rejects.toThrow(
+		await expect(collectJsonPaths(files, "/proj/*.skel")).rejects.toThrow(
 			'no skeleton json found for "/proj/*.skel"',
 		);
 		await expect(
-			resolveInputs(new FakeFiles({ dirs: ["/empty"] }), "/empty", undefined),
+			collectJsonPaths(new FakeFiles({ dirs: ["/empty"] }), "/empty"),
 		).rejects.toThrow('no skeleton json found for "/empty"');
 	});
 
-	it("skips a broken skeleton in a batch and reports why", async () => {
-		const files = batch().seed("/proj/broken.json", "{").seed("/proj/broken.atlas", atlas());
-		const onSkip = vi.fn();
-		const inputs = await resolveInputs(files, "/proj", undefined, onSkip);
-		expect(inputs.map((i) => i.skeletonName)).toEqual(["alpha", "zeta"]);
-		expect(onSkip).toHaveBeenCalledTimes(1);
-		expect(onSkip).toHaveBeenCalledWith(
-			resolve("/proj/broken.json"),
-			"skeleton file is not valid JSON",
-		);
-	});
-
-	it("fails a batch on the first broken skeleton when nobody listens for skips", async () => {
-		const files = batch().seed("/proj/broken.json", "{").seed("/proj/broken.atlas", atlas());
-		await expect(resolveInputs(files, "/proj", undefined)).rejects.toThrow(
-			"skeleton file is not valid JSON",
-		);
-	});
-
-	it("surfaces the real error for a single input even with a skip listener", async () => {
-		const onSkip = vi.fn();
-		const files = new FakeFiles({ files: { "/solo/hero.json": skeleton() } });
-		await expect(resolveInputs(files, "/solo", undefined, onSkip)).rejects.toThrow(
-			"no atlas found beside hero.json; pass --atlas",
-		);
-		expect(onSkip).not.toHaveBeenCalled();
-	});
-
-	it("says nothing was renderable when every skeleton in a batch is skipped", async () => {
-		const files = new FakeFiles({ files: { "/bad/a.json": "{", "/bad/b.json": "{}" } });
-		const onSkip = vi.fn();
-		await expect(resolveInputs(files, "/bad", undefined, onSkip)).rejects.toThrow(
-			'no renderable skeletons found for "/bad"',
-		);
-		expect(onSkip.mock.calls).toEqual([
-			[resolve("/bad/a.json"), "no atlas found beside a.json; pass --atlas"],
-			[resolve("/bad/b.json"), "no atlas found beside b.json; pass --atlas"],
-		]);
-	});
-
-	it("applies an --atlas override to every skeleton in the batch", async () => {
-		const files = new FakeFiles({
-			files: {
-				"/proj/a.json": skeleton(),
-				"/proj/b.json": skeleton(),
-				"/shared/pack.atlas": atlas(),
-			},
-		});
-		const inputs = await resolveInputs(files, "/proj", "/shared/pack.atlas");
-		expect(inputs.map((i) => i.atlasPath)).toEqual([
-			resolve("/shared/pack.atlas"),
-			resolve("/shared/pack.atlas"),
-		]);
-	});
-
 	it("takes an existing skeleton path with brackets literally", async () => {
-		const files = new FakeFiles({
-			files: { "/art/hero[v2].json": skeleton(), "/art/hero[v2].atlas": atlas() },
-		});
-		const inputs = await resolveInputs(files, "/art/hero[v2].json", undefined);
-		expect(inputs.map((i) => i.jsonPath)).toEqual([resolve("/art/hero[v2].json")]);
+		const files = new FakeFiles({ files: { "/art/hero[v2].json": skeleton() } });
+		expect(await collectJsonPaths(files, "/art/hero[v2].json")).toEqual([
+			resolve("/art/hero[v2].json"),
+		]);
 	});
 
 	it("accepts an upper-case .JSON skeleton as a file, in a directory and from a glob", async () => {
-		const files = new FakeFiles({
-			files: { "/art/Hero.JSON": skeleton(), "/art/Hero.atlas": atlas() },
-		});
+		const files = new FakeFiles({ files: { "/art/Hero.JSON": skeleton() } });
 		for (const target of ["/art/Hero.JSON", "/art", "/art/*"]) {
-			const inputs = await resolveInputs(files, target, undefined);
-			expect(inputs.map((i) => i.skeletonName)).toEqual(["Hero"]);
+			expect(await collectJsonPaths(files, target)).toEqual([resolve("/art/Hero.JSON")]);
 		}
 	});
 });

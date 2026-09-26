@@ -38,31 +38,13 @@ export async function resolveInput(
 	};
 }
 
-export async function resolveInputs(
-	files: Files,
-	target: string,
-	atlasOverride: string | undefined,
-	onSkip?: (path: string, reason: string) => void,
-): Promise<ResolvedInput[]> {
-	const jsonPaths = await collectJsonPaths(files, target);
-	if (jsonPaths.length === 0) throw new Error(`no skeleton json found for "${target}"`);
-
-	const isBatch = jsonPaths.length > 1;
-	const inputs: ResolvedInput[] = [];
-	for (const path of jsonPaths) {
-		try {
-			inputs.push(await resolveInput(files, path, atlasOverride));
-		} catch (err) {
-			const reason = err instanceof Error ? err.message : String(err);
-			if (!onSkip || !isBatch) throw err;
-			onSkip(path, reason);
-		}
-	}
-	if (inputs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);
-	return inputs;
+export async function collectJsonPaths(files: Files, target: string): Promise<string[]> {
+	const paths = await findJsonPaths(files, target);
+	if (paths.length === 0) throw new Error(`no skeleton json found for "${target}"`);
+	return paths;
 }
 
-async function collectJsonPaths(files: Files, target: string): Promise<string[]> {
+async function findJsonPaths(files: Files, target: string): Promise<string[]> {
 	const kind = await files.kindOf(target);
 	if (!kind && isGlob(target)) {
 		const matches = (await files.glob(target)).filter(hasJsonExtension);

@@ -4,12 +4,11 @@ import type { ClipWriter } from "#/render/clip-writer.ts";
 import type { MeasureResult } from "#/render/harness/contract.ts";
 import type { RenderOptions } from "#/render/options.ts";
 import type { Piece } from "#/render/pieces.ts";
-import type { Job } from "#/render/plan.ts";
+import type { Job, PlanRequest, RenderPlan, Skip } from "#/render/plan.ts";
 import type { RunParams } from "#/render/requests.ts";
 
-import { resolveInputs } from "#/input/resolve.ts";
 import { openClipWriter } from "#/render/clip-writer.ts";
-import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
+import { PlanError, planRender } from "#/render/plan.ts";
 import { buildMeasureReq, buildRequest, pickBox } from "#/render/requests.ts";
 import { sessionConfig } from "#/render/session-config.ts";
 import { parseRenderSettings } from "#/render/settings.ts";
@@ -19,27 +18,8 @@ export async function renderCommand(
 	target: string,
 	options: RenderOptions,
 ): Promise<void> {
-	const { concurrency, pieceSpecs, dryRun, ...settings } = parseRenderSettings(options);
-
-	const inputs = await resolveInputs(env.files, target, options.atlas, (path, reason) => {
-		console.warn(`skip ${path}: ${reason}`);
-	});
-
-	const jobs = planJobs(inputs, {
-		batch: inputs.length > 1,
-		animation: options.animation,
-		pieceSpecs,
-		format: settings.format,
-		out: options.out,
-		outDir: options.outDir,
-	});
-	if (jobs.length === 0) throw new Error(`no renderable skeletons found for "${target}"`);
-	if (options.out && jobs.length > 1) {
-		throw new Error(
-			`--out writes a single output but ${jobs.length} are planned; use --out-dir`,
-		);
-	}
-	assertNoOutputCollisions(jobs);
+	const { concurrency, dryRun, ...settings } = parseRenderSettings(options);
+	const { jobs } = await planAndReport(env, { ...settings, target });
 
 	if (dryRun) {
 		printDryRun(jobs);
@@ -50,12 +30,33 @@ export async function renderCommand(
 	const pool = await env.launchRenderPool();
 	try {
 		const jobsBySkeleton = [...groupBy(jobs, (j) => j.input.jsonPath).values()];
-		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, inputs.length), {
+		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, jobsBySkeleton.length), {
 			params: settings,
 			write,
 		});
 	} finally {
 		await pool.close();
+	}
+}
+
+async function planAndReport(env: Env, request: PlanRequest): Promise<RenderPlan> {
+	try {
+		const plan = await planRender(env.files, request);
+		reportSkipped(plan.skipped);
+		return plan;
+	} catch (err) {
+		if (err instanceof PlanError) reportSkipped(err.skipped);
+		throw err;
+	}
+}
+
+function reportSkipped(skipped: Skip[]): void {
+	for (const { path, reason, piece } of skipped) {
+		console.warn(
+			piece === undefined
+				? `skip ${path}: ${reason}`
+				: `skip --piece "${piece}" for ${path}: ${reason}`,
+		);
 	}
 }
 

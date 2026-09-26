@@ -13,6 +13,10 @@ import { assertDistinctPieceNames } from "#/render/pieces.ts";
 
 export type RenderSettings = RunParams & {
 	concurrency: number;
+	atlas?: string;
+	animation?: string;
+	out?: string;
+	outDir?: string;
 	pieceSpecs: string[];
 	dryRun: boolean;
 };
@@ -34,6 +38,10 @@ export function parseRenderSettings(options: RenderOptions): RenderSettings {
 		skin: options.skin,
 		background: parseBackground(options.background, format),
 		lossyQuality: parseWebpLossyQuality(options.quality, format),
+		atlas: options.atlas,
+		animation: options.animation,
+		out: options.out,
+		outDir: options.outDir,
 		pieceSpecs,
 		dryRun: options.dryRun ?? false,
 	};

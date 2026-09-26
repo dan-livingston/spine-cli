@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { assertDistinctPieceNames, resolvePieces } from "#/render/pieces.ts";
-import { resolvedInput } from "#/test/render-plan-fixtures.ts";
 
 const SLOTS = ["door/left", "door/right", "chips/red", "chips/blue", "background", "shadow"];
 
 function resolve(specs: string[], names: string[] = SLOTS) {
-	const unmatched: string[] = [];
-	const pieces = resolvePieces(resolvedInput(), names, specs, (spec) => unmatched.push(spec));
-	return { pieces, unmatched };
+	return resolvePieces(names, specs);
 }
 
 describe("resolvePieces", () => {
@@ -62,10 +59,10 @@ describe("resolvePieces", () => {
 		expect(() => resolve([" , ,"])).toThrow("empty --piece spec");
 	});
 
-	it("refuses a skeleton with no slots, naming the skeleton", () => {
-		expect(() =>
-			resolvePieces(resolvedInput({ skeletonName: "vault" }), [], ["*"], () => {}),
-		).toThrow("vault: skeleton has no slots to select pieces from");
+	it("refuses a skeleton with no slots", () => {
+		expect(() => resolvePieces([], ["*"])).toThrow(
+			"skeleton has no slots to select pieces from",
+		);
 	});
 });
 

@@ -1,20 +1,16 @@
-import type { ResolvedInput } from "#/types.ts";
-
 export interface Piece {
 	name: string;
 	slots: string[];
 }
 
-export function resolvePieces(
-	input: ResolvedInput,
-	names: string[],
-	specs: string[],
-	onNoMatch: (spec: string) => void,
-): Piece[] {
-	if (names.length === 0) {
-		throw new Error(`${input.skeletonName}: skeleton has no slots to select pieces from`);
-	}
-	const pieces: Piece[] = [];
+export interface PieceSelection {
+	pieces: Piece[];
+	unmatched: string[];
+}
+
+export function resolvePieces(names: string[], specs: string[]): PieceSelection {
+	if (names.length === 0) throw new Error("skeleton has no slots to select pieces from");
+	const selection: PieceSelection = { pieces: [], unmatched: [] };
 	for (const spec of specs) {
 		const globs = spec
 			.split(",")
@@ -23,13 +19,10 @@ export function resolvePieces(
 		if (globs.length === 0) throw new Error(`empty --piece spec`);
 		const patterns = globs.map(slotGlobToRegex);
 		const slots = names.filter((n) => patterns.some((re) => re.test(n)));
-		if (slots.length === 0) {
-			onNoMatch(spec);
-			continue;
-		}
-		pieces.push({ name: filenameSafePieceName(spec), slots });
+		if (slots.length === 0) selection.unmatched.push(spec);
+		else selection.pieces.push({ name: filenameSafePieceName(spec), slots });
 	}
-	return pieces;
+	return selection;
 }
 
 function slotGlobToRegex(glob: string): RegExp {

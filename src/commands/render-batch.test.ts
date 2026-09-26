@@ -113,6 +113,19 @@ describe("renderCommand batch", () => {
 		expect(launches()).toBe(0);
 	});
 
+	it("reports skips before failing when a batch has nothing to render", async () => {
+		const { env, files, launches } = castEnv();
+		files.seed("/proj/boss.json", "{ not json");
+		await expect(renderCommand(env, "/proj", { animation: "jump" })).rejects.toThrow(
+			'no renderable skeletons found for "/proj"',
+		);
+		expect(warnings).toEqual([
+			`skip ${resolve("/proj/boss.json")}: skeleton file is not valid JSON`,
+			`skip ${resolve("/proj/hero.json")}: no animation "jump"; have: idle`,
+		]);
+		expect(launches()).toBe(0);
+	});
+
 	it("keeps the animation in the survivor's name when a batch loses a skeleton at load time", async () => {
 		const { env, files } = castEnv();
 		files.seed("/proj/boss.json", "{ not json");
@@ -197,7 +210,7 @@ describe("renderCommand pieces", () => {
 		await renderCommand(env, "/proj", pieceOptions);
 
 		expect(warnings).toEqual([
-			`skip ${resolve("/proj/boss.json")}: --piece "h*" matched no slots`,
+			`skip --piece "h*" for ${resolve("/proj/boss.json")}: matched no slots`,
 		]);
 		expect(files.writtenPaths().sort()).toEqual([
 			"/proj/boss_idle_body.apng",

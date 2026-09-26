@@ -1,209 +1,131 @@
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vite-plus/test";
 
-import type { JobPlan } from "#/render/plan.ts";
+import type { PlanRequest, RenderPlan } from "#/render/plan.ts";
 
-import { assertNoOutputCollisions, planJobs } from "#/render/plan.ts";
-import { atlasPage, resolvedInput } from "#/test/render-plan-fixtures.ts";
+import { PlanError, planRender } from "#/render/plan.ts";
+import { seedSkeleton } from "#/test/cmd-render-fixtures.ts";
+import { FakeFiles } from "#/test/fake-files.ts";
 
-function plan(overrides: Partial<JobPlan> = {}): JobPlan {
-	return { batch: false, pieceSpecs: [], format: "gif", ...overrides };
+function request(target: string, overrides: Partial<PlanRequest> = {}): PlanRequest {
+	return { target, pieceSpecs: [], format: "gif", ...overrides };
 }
 
-function targets(jobs: { target: { path: string } }[]): string[] {
-	return jobs.map((j) => j.target.path);
+function cast(): FakeFiles {
+	const files = seedSkeleton(new FakeFiles(), "/proj", "hero");
+	return seedSkeleton(files, "/proj", "vault", { slots: ["lid"] });
 }
 
-let warn: ReturnType<typeof vi.spyOn>;
+async function failure(files: FakeFiles, req: PlanRequest): Promise<PlanError> {
+	const error = await planRender(files, req).then(
+		() => new Error("expected planRender to reject"),
+		(err: Error) => err,
+	);
+	if (!(error instanceof PlanError)) throw error;
+	return error;
+}
 
-beforeEach(() => {
-	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+const targets = (plan: RenderPlan): string[] => plan.jobs.map((j) => j.target.path);
+
+describe("planRender for one skeleton", () => {
+	it("plans the skeleton with nothing skipped", async () => {
+		const plan = await planRender(cast(), request("/proj/hero.json"));
+		expect(targets(plan)).toEqual([join(resolve("/proj"), "hero_idle.gif")]);
+		expect(plan.skipped).toEqual([]);
+	});
+
+	it("names the skeleton once when it cannot be planned", async () => {
+		const files = cast();
+		await expect(
+			planRender(files, request("/proj/hero.json", { animation: "jump" })),
+		).rejects.toThrow(/^hero: no animation "jump"; have: idle$/);
+	});
+
+	it("names the skeleton once when it has no slots for a piece", async () => {
+		const files = seedSkeleton(new FakeFiles(), "/proj", "hero", { slots: [] });
+		await expect(
+			planRender(files, request("/proj/hero.json", { pieceSpecs: ["*"] })),
+		).rejects.toThrow(/^hero: skeleton has no slots to select pieces from$/);
+	});
+
+	it("fails when a piece matches no slot", async () => {
+		await expect(
+			planRender(cast(), request("/proj/hero.json", { pieceSpecs: ["door/*"] })),
+		).rejects.toThrow('hero: --piece "door/*" matched no slots');
+	});
+
+	it("surfaces a load error as it is", async () => {
+		const files = cast().seed("/proj/hero.json", "{");
+		await expect(planRender(files, request("/proj/hero.json"))).rejects.toThrow(
+			/^skeleton file is not valid JSON$/,
+		);
+	});
 });
 
-afterEach(() => {
-	vi.restoreAllMocks();
-});
-
-describe("planJobs for one skeleton", () => {
-	it("plans the only animation beside the skeleton without -a", () => {
-		const jobs = planJobs([resolvedInput()], plan());
-		expect(jobs).toHaveLength(1);
-		expect(jobs[0]).toMatchObject({ animation: "idle" });
-		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero_idle.gif"), isDir: false });
-	});
-
-	it("plans a png sequence as a directory", () => {
-		const jobs = planJobs([resolvedInput()], plan({ format: "pngseq" }));
-		expect(jobs[0]?.target).toEqual({ path: join("/proj", "hero_idle"), isDir: true });
-	});
-
-	it("plans every animation with -a all, naming each file after its animation", () => {
-		const input = resolvedInput({ animations: ["idle", "run", "jump"] });
-		const jobs = planJobs([input], plan({ animation: "all", outDir: "/out" }));
-		expect(jobs.map((j) => j.animation)).toEqual(["idle", "run", "jump"]);
-		expect(targets(jobs)).toEqual([
-			join("/out", "hero_idle.gif"),
-			join("/out", "hero_run.gif"),
-			join("/out", "hero_jump.gif"),
-		]);
-	});
-
-	it("plans only the requested animation", () => {
-		const input = resolvedInput({ animations: ["idle", "run"] });
-		const jobs = planJobs([input], plan({ animation: "run" }));
-		expect(jobs.map((j) => j.animation)).toEqual(["run"]);
-	});
-
-	it("names the file after a single chosen animation", () => {
-		const input = resolvedInput({ animations: ["idle", "run"] });
-		const jobs = planJobs([input], plan({ animation: "run" }));
-		expect(targets(jobs)).toEqual([join("/proj", "hero_run.gif")]);
-	});
-
-	it("writes to --out verbatim", () => {
-		const jobs = planJobs([resolvedInput()], plan({ out: "/else/where.gif", outDir: "/x" }));
-		expect(jobs[0]?.target).toEqual({ path: "/else/where.gif", isDir: false });
-	});
-
-	it("lists the animations when several exist and none is chosen", () => {
-		const input = resolvedInput({ animations: ["idle", "run"] });
-		expect(() => planJobs([input], plan())).toThrow(
-			"multiple animations, pass --animation <name> or all; have: idle, run",
-		);
-	});
-
-	it("lists the animations when the requested one does not exist", () => {
-		const input = resolvedInput({ animations: ["idle", "run"] });
-		expect(() => planJobs([input], plan({ animation: "jump" }))).toThrow(
-			'no animation "jump"; have: idle, run',
-		);
-	});
-
-	it("names the skeleton once in an animation error", () => {
-		const input = resolvedInput({ animations: ["idle", "run"] });
-		expect(() => planJobs([input], plan({ animation: "jump" }))).toThrow(
-			/^hero: no animation "jump"; have: idle, run$/,
-		);
-	});
-
-	it("refuses a skeleton with no animations", () => {
-		const input = resolvedInput({ animations: [] });
-		expect(() => planJobs([input], plan())).toThrow("skeleton has no animations");
-	});
-
-	it("names every atlas texture missing on disk", () => {
-		const input = resolvedInput({
-			atlas: {
-				pages: [atlasPage("a.png"), atlasPage("b.png", false), atlasPage("c.png", false)],
+describe("planRender for a batch", () => {
+	it("skips a skeleton it cannot plan and one it cannot load, then has nothing to render", async () => {
+		const files = seedSkeleton(new FakeFiles(), "/proj", "hero", { animations: ["walk"] });
+		files.seed("/proj/boss.json", "{");
+		const error = await failure(files, request("/proj", { animation: "idle" }));
+		expect(error.message).toBe('no renderable skeletons found for "/proj"');
+		expect(error.skipped).toEqual([
+			{
+				path: resolve("/proj/boss.json"),
+				reason: "skeleton file is not valid JSON",
 			},
+			{ path: resolve("/proj/hero.json"), reason: 'no animation "idle"; have: walk' },
+		]);
+	});
+
+	it("plans the survivor of a load failure as part of the batch", async () => {
+		const files = seedSkeleton(new FakeFiles(), "/proj", "hero", {
+			animations: ["idle", "run"],
 		});
-		expect(() => planJobs([input], plan())).toThrow(
-			"hero: atlas texture missing on disk: /proj/b.png, /proj/c.png",
-		);
+		seedSkeleton(files, "/proj", "boss").seed("/proj/boss.json", "{");
+		const error = await failure(files, request("/proj"));
+		expect(error.skipped.map((s) => s.reason)).toEqual([
+			"skeleton file is not valid JSON",
+			"multiple animations, pass --animation <name> or all; have: idle, run",
+		]);
+	});
+
+	it("reports a dropped piece as a piece and keeps the skeleton", async () => {
+		const plan = await planRender(cast(), request("/proj", { pieceSpecs: ["body", "lid"] }));
+		expect(targets(plan)).toEqual([
+			join(resolve("/proj"), "hero_idle_body.gif"),
+			join(resolve("/proj"), "vault_idle_lid.gif"),
+		]);
+		expect(plan.skipped).toEqual([
+			{ path: resolve("/proj/hero.json"), reason: "matched no slots", piece: "lid" },
+			{ path: resolve("/proj/vault.json"), reason: "matched no slots", piece: "body" },
+		]);
+	});
+
+	it("applies an --atlas override to every skeleton", async () => {
+		const files = cast().seed("/shared/pack.atlas", "hero.png\nsize: 4,4\n");
+		files.seed("/shared/hero.png", new Uint8Array([1]));
+		const plan = await planRender(files, request("/proj", { atlas: "/shared/pack.atlas" }));
+		expect(plan.jobs.map((j) => j.input.atlasPath)).toEqual([
+			resolve("/shared/pack.atlas"),
+			resolve("/shared/pack.atlas"),
+		]);
 	});
 });
 
-describe("planJobs with pieces", () => {
-	const slots = ["door/l", "door/r", "chips/a", "background"];
-
-	it("plans one job per animation and piece, naming each file after both", () => {
-		const input = resolvedInput({ animations: ["open", "close"], slots });
-		const jobs = planJobs(
-			[input],
-			plan({ animation: "all", pieceSpecs: ["door/*", "chips/*"] }),
-		);
-		expect(targets(jobs)).toEqual([
-			join("/proj", "hero_open_door.gif"),
-			join("/proj", "hero_open_chips.gif"),
-			join("/proj", "hero_close_door.gif"),
-			join("/proj", "hero_close_chips.gif"),
-		]);
-		expect(jobs[0]?.piece).toEqual({ name: "door", slots: ["door/l", "door/r"] });
+describe("planRender output checks", () => {
+	it("refuses --out for several outputs before it looks for collisions", async () => {
+		const error = await failure(cast(), request("/proj", { out: "/x.gif" }));
+		expect(error.message).toBe("--out writes a single output but 2 are planned; use --out-dir");
 	});
 
-	it("fails a single skeleton when a piece matches no slots", () => {
-		const input = resolvedInput({ slots });
-		expect(() => planJobs([input], plan({ pieceSpecs: ["door/*", "lid"] }))).toThrow(
-			'hero: --piece "lid" matched no slots',
+	it("names both skeletons when they would write the same file, keeping the skips", async () => {
+		const files = seedSkeleton(new FakeFiles(), "/a", "hero");
+		seedSkeleton(files, "/b", "hero");
+		files.seed("/a/broken.json", "{");
+		const error = await failure(files, request("/*/*.json", { outDir: "/out" }));
+		expect(error.message).toBe(
+			`output collision: "${resolve("/a/hero.json")}" and "${resolve("/b/hero.json")}" both write ${join("/out", "hero_idle.gif")}; rename or render separately`,
 		);
-	});
-
-	it("in a batch, warns about an unmatched piece and still plans the others", () => {
-		const hero = resolvedInput({ slots });
-		const vault = resolvedInput({ skeletonName: "vault", slots: ["lid"] });
-		const jobs = planJobs([hero, vault], plan({ batch: true, pieceSpecs: ["door/*", "lid"] }));
-		expect(targets(jobs)).toEqual([
-			join("/proj", "hero_idle_door.gif"),
-			join("/proj", "vault_idle_lid.gif"),
-		]);
-		expect(warn.mock.calls.map((c: unknown[]) => c[0])).toEqual([
-			'skip /proj/hero.json: --piece "lid" matched no slots',
-			'skip /proj/vault.json: --piece "door/*" matched no slots',
-		]);
-	});
-
-	it("refuses pieces on a skeleton with no slots", () => {
-		const input = resolvedInput({ slots: [] });
-		expect(() => planJobs([input], plan({ pieceSpecs: ["*"] }))).toThrow(
-			"skeleton has no slots to select pieces from",
-		);
-	});
-});
-
-describe("planJobs for a batch", () => {
-	it("always names files after the animation", () => {
-		const jobs = planJobs(
-			[resolvedInput(), resolvedInput({ skeletonName: "vault" })],
-			plan({ batch: true }),
-		);
-		expect(targets(jobs)).toEqual([
-			join("/proj", "hero_idle.gif"),
-			join("/proj", "vault_idle.gif"),
-		]);
-	});
-
-	it("skips skeletons it cannot plan, warning with the reason, and plans the rest", () => {
-		const broken = resolvedInput({ skeletonName: "broken", animations: [] });
-		const noTexture = resolvedInput({
-			skeletonName: "bare",
-			atlas: { pages: [atlasPage("bare.png", false)] },
-		});
-		const ambiguous = resolvedInput({ skeletonName: "multi", animations: ["a", "b"] });
-		const jobs = planJobs(
-			[broken, noTexture, ambiguous, resolvedInput()],
-			plan({ batch: true }),
-		);
-		expect(jobs.map((j) => j.input.skeletonName)).toEqual(["hero"]);
-		const warnings = warn.mock.calls.map((c: unknown[]) => String(c[0]));
-		expect(warnings).toHaveLength(3);
-		expect(warnings[0]).toBe("skip /proj/broken.json: skeleton has no animations");
-		expect(warnings[1]).toBe(
-			"skip /proj/bare.json: atlas texture missing on disk: /proj/bare.png",
-		);
-		expect(warnings[2]).toContain("skip /proj/multi.json: multiple animations");
-	});
-
-	it("does not warn when every skeleton plans", () => {
-		planJobs([resolvedInput()], plan({ batch: true }));
-		expect(warn).not.toHaveBeenCalled();
-	});
-});
-
-describe("assertNoOutputCollisions", () => {
-	it("accepts distinct targets", () => {
-		const jobs = planJobs(
-			[resolvedInput(), resolvedInput({ skeletonName: "vault" })],
-			plan({ batch: true, outDir: "/out" }),
-		);
-		expect(() => assertNoOutputCollisions(jobs)).not.toThrow();
-	});
-
-	it("names both skeletons when they would write the same file", () => {
-		const a = resolvedInput({ jsonPath: "/a/hero.json" });
-		const b = resolvedInput({ jsonPath: "/b/hero.json" });
-		const jobs = planJobs([a, b], plan({ batch: true, outDir: "/out" }));
-		expect(() => assertNoOutputCollisions(jobs)).toThrow(
-			`output collision: "/a/hero.json" and "/b/hero.json" both write ${join("/out", "hero_idle.gif")}; rename or render separately`,
-		);
+		expect(error.skipped.map((s) => s.path)).toEqual([resolve("/a/broken.json")]);
 	});
 });
