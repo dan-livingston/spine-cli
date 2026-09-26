@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 import type { Clip, RenderPool, RenderWorker } from "#/ports/render-pool.ts";
+import type { ClipHarness } from "#/render/collect-clip.ts";
 import type { HarnessApi, RenderRequest, SessionConfig } from "#/render/harness/contract.ts";
 
-import { framesPerBatch } from "#/render/frame-batch.ts";
+import { collectClip } from "#/render/collect-clip.ts";
 
 type HarnessWindow = typeof globalThis & { SpineHarness: HarnessApi };
 
@@ -114,25 +115,25 @@ class PlaywrightWorker implements RenderWorker {
 	}
 
 	async render(id: number, req: RenderRequest): Promise<Clip> {
-		const clip = await this.withPageErrors(() =>
-			this.page.evaluate(
-				(a) => (window as HarnessWindow).SpineHarness.startClip(a.id, a.req),
-				{ id, req },
+		return collectClip(this.harness, id, req, base64ToBytes);
+	}
+
+	private readonly harness: ClipHarness = {
+		startClip: (id, req) =>
+			this.withPageErrors(() =>
+				this.page.evaluate(
+					(a) => (window as HarnessWindow).SpineHarness.startClip(a.id, a.req),
+					{ id, req },
+				),
 			),
-		);
-		const maxFrames = framesPerBatch(clip.width, clip.height);
-		const frames: Uint8Array[] = [];
-		while (frames.length < clip.frameCount) {
-			const batch = await this.withPageErrors(() =>
+		nextFrames: (id, maxFrames) =>
+			this.withPageErrors(() =>
 				this.page.evaluate(
 					(a) => (window as HarnessWindow).SpineHarness.nextFrames(a.id, a.maxFrames),
 					{ id, maxFrames },
 				),
-			);
-			frames.push(...batch.map((b64) => base64ToBytes(b64)));
-		}
-		return { width: clip.width, height: clip.height, frames };
-	}
+			),
+	};
 
 	async dispose(id: number): Promise<void> {
 		await this.page.evaluate(
