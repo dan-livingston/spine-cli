@@ -65,21 +65,15 @@ export function layoutSheet(cells: SheetCells): SheetLayout {
 	};
 }
 
-export interface Sheet {
-	layout: SheetLayout;
-	image: Frame;
-}
-
-export function arrangeSheet(frames: Frame[], params: SheetParams, background: Rgba): Sheet {
+export function layoutClipSheet(frames: Frame[], params: SheetParams): SheetLayout {
 	const [{ width, height }] = frames;
-	const layout = layoutSheet({
+	return layoutSheet({
 		frameCount: frames.length,
 		frameWidth: width,
 		frameHeight: height,
 		columns: sheetColumns(frames.length, params),
 		padding: params.padding,
 	});
-	return { layout, image: composeSheet(frames, layout, background) };
 }
 
 export function composeSheet(frames: Frame[], layout: SheetLayout, background: Rgba): Frame {

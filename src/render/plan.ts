@@ -21,6 +21,7 @@ export interface Skip {
 export interface RenderPlan {
 	jobs: Job[];
 	skipped: Skip[];
+	batch: boolean;
 }
 
 export class PlanError extends Error {
@@ -35,7 +36,7 @@ export class PlanError extends Error {
 export async function planRender(files: Files, request: PlanRequest): Promise<RenderPlan> {
 	const paths = await collectJsonPaths(files, request.target);
 	const batch = paths.length > 1;
-	const plan: RenderPlan = { jobs: [], skipped: [] };
+	const plan: RenderPlan = { jobs: [], skipped: [], batch };
 	const skipOrThrow = (path: string, err: unknown, prefix = ""): void => {
 		const reason = err instanceof Error ? err.message : String(err);
 		if (!batch) throw new Error(`${prefix}${reason}`);

@@ -7,10 +7,9 @@ import type { OutputTarget } from "#/render/output-path.ts";
 import type { RunParams } from "#/render/requests.ts";
 
 import { formatSpec, formatsWhere, listOf } from "#/render/formats.ts";
-import { encodeSidecar, sheetSidecar } from "#/render/sheet-sidecar.ts";
-import { arrangeSheet } from "#/render/sheet.ts";
+import { writeSheet } from "#/render/sheet-writer.ts";
 
-export type ClipWriter = (target: OutputTarget, clip: Clip) => Promise<void>;
+export type ClipWriter = (target: OutputTarget, clip: Clip) => Promise<string[]>;
 
 export async function openClipWriter(io: Io, params: RunParams): Promise<ClipWriter> {
 	const spec = formatSpec(params.format);
@@ -24,15 +23,9 @@ export async function openClipWriter(io: Io, params: RunParams): Promise<ClipWri
 			data,
 		}));
 		const encode = { io, path: target.path, frames, settings: params };
-		if (!sheet || !spec.sheet) {
-			await spec.encode(encode);
-			return;
-		}
-		const { layout, image } = arrangeSheet(frames, sheet, params.background);
-		await spec.sheet.encode({ ...encode, frames: [image] });
-		if (!target.sidecar) return;
-		const subject = { ...params, image: target.path, sidecar: target.sidecar };
-		await io.files.write(target.sidecar, encodeSidecar(sheetSidecar(layout, subject)));
+		if (sheet && spec.sheet) return writeSheet(encode, spec.sheet, sheet, target.sidecar);
+		await spec.encode(encode);
+		return [];
 	};
 }
 

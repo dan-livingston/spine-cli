@@ -10,6 +10,7 @@ import { PlanError, planRender } from "#/render/plan.ts";
 import { buildRequest } from "#/render/requests.ts";
 import { sessionConfig } from "#/render/session-config.ts";
 import { parseRenderSettings } from "#/render/settings.ts";
+import { SheetTooLargeError } from "#/render/sheet-writer.ts";
 
 export async function renderCommand(
 	env: Env,
@@ -17,7 +18,7 @@ export async function renderCommand(
 	options: RenderOptions,
 ): Promise<void> {
 	const { concurrency, dryRun, ...settings } = parseRenderSettings(options);
-	const { jobs } = await planAndReport(env, { ...settings, target });
+	const { jobs, batch } = await planAndReport(env, { ...settings, target });
 
 	if (dryRun) {
 		printDryRun(jobs);
@@ -31,6 +32,7 @@ export async function renderCommand(
 		await runJobs(env, pool, jobsBySkeleton, Math.min(concurrency, jobsBySkeleton.length), {
 			params: settings,
 			write,
+			batch,
 		});
 	} finally {
 		await pool.close();
@@ -78,6 +80,7 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 interface Run {
 	params: RunParams;
 	write: ClipWriter;
+	batch: boolean;
 }
 
 async function runJobs(
@@ -113,7 +116,7 @@ async function renderGroup(env: Env, worker: RenderWorker, group: Job[], run: Ru
 					slots: job.piece?.slots,
 					groupSlots,
 				});
-				await writeAndLog(run, job, await worker.render(id, req));
+				await writeOrSkip(run, job, await worker.render(id, req));
 			}
 		}
 	} finally {
@@ -125,9 +128,22 @@ function slotUnion(slots: string[]): string[] | undefined {
 	return slots.length > 0 ? [...new Set(slots)] : undefined;
 }
 
+async function writeOrSkip(run: Run, job: Job, clip: Clip): Promise<void> {
+	try {
+		await writeAndLog(run, job, clip);
+	} catch (err) {
+		if (!(err instanceof SheetTooLargeError)) throw err;
+		const piece = job.piece ? ` piece "${job.piece.name}"` : "";
+		const reason = err.describe(`sheet for animation "${job.animation}"${piece}`);
+		if (!run.batch) throw new Error(`${job.input.skeletonName}: ${reason}`, { cause: err });
+		reportSkipped([{ path: job.input.jsonPath, reason }]);
+	}
+}
+
 async function writeAndLog(run: Run, job: Job, clip: Clip): Promise<void> {
-	await run.write(job.target, clip);
+	const warnings = await run.write(job.target, clip);
 	const { path, isDir, sidecar } = job.target;
 	const detail = isDir ? `/ (${clip.frames.length} frames)` : sidecar ? ` and ${sidecar}` : "";
 	console.log(`wrote ${path}${detail}`);
+	for (const warning of warnings) console.warn(warning);
 }

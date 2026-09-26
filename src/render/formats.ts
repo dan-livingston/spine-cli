@@ -9,6 +9,7 @@ import { encodeVideo } from "#/encode/video.ts";
 import { encodeWebp, encodeWebpStill } from "#/encode/webp.ts";
 
 export interface EncodeSettings {
+	format: Format;
 	fps: number;
 	background: Rgba;
 	lossyQuality?: number;
@@ -26,7 +27,9 @@ export interface Encode {
 	settings: EncodeSettings;
 }
 
-interface SheetSpec {
+export interface SheetSpec {
+	maxSide: number;
+	oversize: "fails" | "warns";
 	encode(encode: Encode): Promise<void>;
 }
 
@@ -63,7 +66,7 @@ const FORMATS = {
 		...animated,
 		extension: ".png",
 		still: true,
-		sheet: { encode: writeFirstPng },
+		sheet: { maxSide: 8192, oversize: "warns", encode: writeFirstPng },
 		encode: writeFirstPng,
 	},
 	gif: {
@@ -102,6 +105,8 @@ const FORMATS = {
 		lossyQuality: true,
 		tool: IMG2WEBP,
 		sheet: {
+			maxSide: 16383,
+			oversize: "fails",
 			encode: ({ io, path, frames, settings }) =>
 				encodeWebpStill(io, IMG2WEBP.command, path, frames[0], settings.lossyQuality),
 		},
