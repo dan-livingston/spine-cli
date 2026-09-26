@@ -79,7 +79,7 @@ describe("planJobs for one skeleton", () => {
 		);
 	});
 
-	it.fails("needs fix: animation errors repeat the skeleton name as 'hero: hero: ...'", () => {
+	it("names the skeleton once in an animation error", () => {
 		const input = resolvedInput({ animations: ["idle", "run"] });
 		expect(() => planJobs([input], plan({ animation: "jump" }))).toThrow(
 			/^hero: no animation "jump"; have: idle, run$/,
@@ -203,7 +203,7 @@ describe("planJobs for a batch", () => {
 		expect(warnings[1]).toBe(
 			"skip /proj/bare.json: atlas texture missing on disk: /proj/bare.png",
 		);
-		expect(warnings[2]).toContain("skip /proj/multi.json: multi: multiple animations");
+		expect(warnings[2]).toContain("skip /proj/multi.json: multiple animations");
 	});
 
 	it("does not warn when every skeleton plans", () => {

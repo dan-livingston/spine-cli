@@ -264,7 +264,7 @@ describe("renderCommand option errors", () => {
 		expect(launches()).toBe(0);
 	});
 
-	it.fails("needs fix: skeleton name is prefixed twice when -a is required", async () => {
+	it("names the skeleton once when -a is required", async () => {
 		const { env } = heroEnv({ animations: ["idle", "run"] });
 		expect(await messageOf(renderCommand(env, TARGET, {}))).toBe(
 			"hero: multiple animations, pass --animation <name> or all; have: idle, run",

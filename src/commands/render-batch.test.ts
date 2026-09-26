@@ -75,7 +75,7 @@ describe("renderCommand batch", () => {
 
 		expect(files.writtenPaths().sort()).toEqual(["/proj/hero_idle.apng"]);
 		expect(warnings).toEqual([
-			`skip ${resolve("/proj/boss.json")}: boss: no animation "idle"; have: walk`,
+			`skip ${resolve("/proj/boss.json")}: no animation "idle"; have: walk`,
 		]);
 	});
 

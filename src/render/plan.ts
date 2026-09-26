@@ -37,7 +37,7 @@ export function planJobs(inputs: ResolvedInput[], plan: JobPlan): Job[] {
 function planSkeletonJobs(input: ResolvedInput, plan: JobPlan): Job[] {
 	assertTexturesExist(input);
 	const names = readAnimationAndSlotNames(input);
-	const animations = selectAnimations(input, names.animations, plan.animation);
+	const animations = selectAnimations(names.animations, plan.animation);
 	const pieces: (Piece | undefined)[] =
 		plan.pieceSpecs.length > 0
 			? resolvePieces(input, names.slots, plan.pieceSpecs, (spec) => {
@@ -107,23 +107,17 @@ function readAnimationAndSlotNames(input: ResolvedInput): SkeletonNames {
 	};
 }
 
-function selectAnimations(
-	input: ResolvedInput,
-	names: string[],
-	requested: string | undefined,
-): string[] {
-	if (names.length === 0) throw new Error(`${input.skeletonName}: skeleton has no animations`);
+function selectAnimations(names: string[], requested: string | undefined): string[] {
+	if (names.length === 0) throw new Error("skeleton has no animations");
 	if (requested === "all") return names;
 	if (requested) {
 		if (!names.includes(requested)) {
-			throw new Error(
-				`${input.skeletonName}: no animation "${requested}"; have: ${names.join(", ")}`,
-			);
+			throw new Error(`no animation "${requested}"; have: ${names.join(", ")}`);
 		}
 		return [requested];
 	}
 	if (names.length === 1) return names;
 	throw new Error(
-		`${input.skeletonName}: multiple animations, pass --animation <name> or all; have: ${names.join(", ")}`,
+		`multiple animations, pass --animation <name> or all; have: ${names.join(", ")}`,
 	);
 }
