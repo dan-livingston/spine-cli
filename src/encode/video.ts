@@ -9,9 +9,11 @@ export async function findFfmpeg(processes: Processes): Promise<string | null> {
 
 const PAD_TO_EVEN_SIZE = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
 
+const PAD_TO_EVEN_SIZE_TRANSPARENT = `${PAD_TO_EVEN_SIZE}:color=black@0`;
+
 const CODEC_ARGS: Record<VideoFormat, string[]> = {
 	mp4: ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", PAD_TO_EVEN_SIZE],
-	webm: ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-vf", PAD_TO_EVEN_SIZE],
+	webm: ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-vf", PAD_TO_EVEN_SIZE_TRANSPARENT],
 };
 
 export async function encodeVideo(

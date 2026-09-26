@@ -69,7 +69,7 @@ describe("encodeVideo", () => {
 		expect(filter).toMatch(/^pad=ceil\(iw\/2\)\*2:ceil\(ih\/2\)\*2/);
 	});
 
-	it.fails("needs fix: webm pads odd sizes with ffmpeg's default opaque black instead of transparency", async () => {
+	it("pads webm with transparency", async () => {
 		const processes = installed();
 		await encodeVideo(processes, "ffmpeg", "/out/a.webm", clip, 30, "webm");
 		const [filter] = valuesAfter(processes.runs[0].args, "-vf");
