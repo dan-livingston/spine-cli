@@ -65,6 +65,9 @@ If the skeleton has more than one animation, `-a` is required. The error lists t
 | `--frame <t>`                   | Time in seconds of the still for `--format png`.                                       |
 | `--background <color>`          | CSS color or `transparent`. Default `transparent`, `white` for `mp4`.                  |
 | `--quality <0-100>`             | Lossy `webp` quality. Omit for lossless.                                               |
+| `--sheet`                       | Write every frame into one `png` or `webp` image. See [Sheets](#sheets).               |
+| `--rows <n>`, `--columns <n>`   | Sheet grid. Pass one. Default one row.                                                 |
+| `--padding <px>`                | Gap between sheet cells. Default 0.                                                    |
 | `--concurrency <n>`             | Skeletons rendered in parallel in a batch. Default 1.                                  |
 | `--dry-run`                     | List the files that would be written.                                                  |
 
@@ -75,6 +78,79 @@ Format notes:
 - `mp4` has no alpha. `webm` keeps it.
 - `gif` has only on/off transparency, so soft edges look jagged on a transparent background. Set `--background` for cleaner edges.
 - `webp` is lossless with full alpha unless you pass `--quality`.
+
+## Sheets
+
+```sh
+spine-cli render hero.json -a run -f png --sheet
+spine-cli render hero.json -a run -f webp --sheet --rows 4 --padding 2 --scale 0.5
+```
+
+`--sheet` renders every frame of the clip into one image, as a grid. It works with `png` and `webp`, the formats that write a single still. A `webp` sheet is a still image, lossless unless you pass `--quality`.
+
+Every cell is one frame, and all frames of a clip are the same size. Frames fill left to right, then top to bottom. By default the sheet is one row.
+
+- `--columns <n>` sets the columns. The rows are `ceil(frames / n)`.
+- `--rows <n>` sets the rows. The columns are `ceil(frames / n)`, and the sheet has only as many rows as the frames fill.
+- A value larger than the frame count is reduced to it, so `--columns 999` gives one row.
+- `--padding <px>` puts a gap between cells, not around the edge. The gap and any empty cells in the last row take the `--background` color, transparent by default.
+
+The sheet is `columns × frameWidth + (columns − 1) × padding` wide and `rows × frameHeight + (rows − 1) × padding` tall.
+
+Sheets are named like any other output. Each one gets a sidecar beside it, named after the image with `.sheet.json` in place of the extension: `hero_run.png` writes `hero_run.sheet.json`, and `-o run.webp` writes `run.sheet.json`. `--dry-run` lists both.
+
+```json
+{
+	"image": "hero_run.png",
+	"format": "png",
+	"frameWidth": 256,
+	"frameHeight": 320,
+	"columns": 30,
+	"rows": 1,
+	"frameCount": 30,
+	"fps": 30,
+	"padding": 0,
+	"frames": [{ "x": 0, "y": 0, "w": 256, "h": 320 }]
+}
+```
+
+`image` is relative to the sidecar. `frames` has one rect per frame, in play order.
+
+`--frame` and `--loops` do not apply to a sheet and are rejected with it. `--rows`, `--columns` and `--padding` are rejected without `--sheet`, and `--rows` with `--columns`.
+
+Size limits:
+
+- `webp` holds at most 16383 px a side. A larger `webp` sheet is an error that names its size. Use a smaller `--scale`, a lower `--fps`, or `--rows`/`--columns`. In a batch, the skeleton is skipped and the rest render.
+- A `png` sheet over 8192 px a side is written, with a warning that browsers and GPUs may refuse it.
+
+A single-row sheet plays in a browser with CSS alone. Size an element to one frame, and step `background-position` across the strip:
+
+```sh
+spine-cli render hero.json -a run -f png --sheet --scale 0.5
+```
+
+```css
+.hero {
+	width: 128px;
+	height: 160px;
+	background: url(hero_run.png);
+	animation: run 1s steps(30) infinite;
+}
+
+@keyframes run {
+	to {
+		background-position: -3840px 0;
+	}
+}
+```
+
+Take the numbers from the sidecar: the duration is `frameCount / fps` seconds, and the end position is minus the sheet width.
+
+For a game engine, a grid with padding keeps texture filtering from bleeding between frames:
+
+```sh
+spine-cli render hero.json -a all -f png --sheet --columns 8 --padding 2 --out-dir sheets/
+```
 
 ## Pieces
 
