@@ -61,6 +61,7 @@ function reportSkipped(skipped: Skip[]): void {
 function printDryRun(jobs: Job[]): void {
 	for (const job of jobs) {
 		console.log(`${job.target.path}${job.target.isDir ? "/ (png sequence)" : ""}`);
+		if (job.target.sidecar) console.log(job.target.sidecar);
 	}
 }
 
@@ -126,7 +127,7 @@ function slotUnion(slots: string[]): string[] | undefined {
 
 async function writeAndLog(run: Run, job: Job, clip: Clip): Promise<void> {
 	await run.write(job.target, clip);
-	console.log(
-		`wrote ${job.target.path}${job.target.isDir ? `/ (${clip.frames.length} frames)` : ""}`,
-	);
+	const { path, isDir, sidecar } = job.target;
+	const detail = isDir ? `/ (${clip.frames.length} frames)` : sidecar ? ` and ${sidecar}` : "";
+	console.log(`wrote ${path}${detail}`);
 }

@@ -60,4 +60,40 @@ describe("renderCommand --sheet", () => {
 		).rejects.toThrow("--sheet only applies to png and webp; gif cannot write a sheet");
 		expect(launches()).toBe(0);
 	});
+
+	it("writes a sidecar describing every frame beside the sheet and names both", async () => {
+		const { env, files } = clipEnv(3, 2, 5);
+		await renderCommand(env, TARGET, {
+			format: "png",
+			sheet: true,
+			fps: "12",
+			out: "/out/run.png",
+		});
+
+		expect(files.writtenPaths()).toEqual(["/out/run.png", "/out/run.sheet.json"]);
+		expect(JSON.parse(new TextDecoder().decode(files.bytes("/out/run.sheet.json")))).toEqual({
+			image: "run.png",
+			format: "png",
+			frameWidth: 3,
+			frameHeight: 2,
+			columns: 5,
+			rows: 1,
+			frameCount: 5,
+			fps: 12,
+			padding: 0,
+			frames: [0, 3, 6, 9, 12].map((x) => ({ x, y: 0, w: 3, h: 2 })),
+		});
+		expect(logs).toEqual(["wrote /out/run.png and /out/run.sheet.json"]);
+	});
+
+	it("lists the sheet and its sidecar on a dry run", async () => {
+		const { env, files } = heroEnv();
+		await renderCommand(env, TARGET, { format: "png", sheet: true, dryRun: true });
+
+		expect(logs).toEqual([
+			resolve("/proj/hero_idle.png"),
+			resolve("/proj/hero_idle.sheet.json"),
+		]);
+		expect(files.writes).toEqual([]);
+	});
 });

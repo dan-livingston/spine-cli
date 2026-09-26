@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 
 import type { Format } from "#/render/formats.ts";
 
@@ -7,6 +7,7 @@ import { formatSpec } from "#/render/formats.ts";
 export interface OutputTarget {
 	path: string;
 	isDir: boolean;
+	sidecar?: string;
 }
 
 export interface OutputContext {
@@ -17,9 +18,19 @@ export interface OutputContext {
 	format: Format;
 	out?: string;
 	outDir?: string;
+	sheet?: boolean;
 }
 
 export function planOutput(ctx: OutputContext): OutputTarget {
+	const target = planImage(ctx);
+	return ctx.sheet ? { ...target, sidecar: sidecarPath(target.path) } : target;
+}
+
+function sidecarPath(image: string): string {
+	return image.slice(0, image.length - extname(image).length) + ".sheet.json";
+}
+
+function planImage(ctx: OutputContext): OutputTarget {
 	const { extension } = formatSpec(ctx.format);
 	if (ctx.out) {
 		return { path: ctx.out, isDir: extension === undefined };

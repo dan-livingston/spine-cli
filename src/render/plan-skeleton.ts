@@ -1,5 +1,7 @@
 import type { Format } from "#/render/formats.ts";
+import type { OutputTarget } from "#/render/output-path.ts";
 import type { Piece } from "#/render/pieces.ts";
+import type { SheetParams } from "#/render/sheet.ts";
 import type { ResolvedInput } from "#/types.ts";
 
 import { planOutput } from "#/render/output-path.ts";
@@ -9,7 +11,7 @@ export interface Job {
 	input: ResolvedInput;
 	animation: string;
 	piece?: Piece;
-	target: { path: string; isDir: boolean };
+	target: OutputTarget;
 }
 
 export interface JobRequest {
@@ -18,6 +20,7 @@ export interface JobRequest {
 	format: Format;
 	out?: string;
 	outDir?: string;
+	sheet?: SheetParams;
 }
 
 export interface SkeletonPlan {
@@ -46,6 +49,7 @@ export function planSkeleton(input: ResolvedInput, request: JobRequest): Skeleto
 				format: request.format,
 				out: request.out,
 				outDir: request.outDir,
+				sheet: request.sheet !== undefined,
 			}),
 		})),
 	);

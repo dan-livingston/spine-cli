@@ -68,4 +68,19 @@ describe("planOutput", () => {
 			join(chars, "hero_combat_melee_jab.gif"),
 		);
 	});
+
+	it("puts a sheet's sidecar beside it, named after the image with .sheet.json", () => {
+		expect(planOutput({ ...base, format: "png", sheet: true })).toEqual({
+			path: join(chars, "hero_run.png"),
+			isDir: false,
+			sidecar: join(chars, "hero_run.sheet.json"),
+		});
+		expect(
+			planOutput({ ...base, format: "webp", sheet: true, out: "/x/run.webp" }).sidecar,
+		).toBe(join("/x", "run.sheet.json"));
+		expect(planOutput({ ...base, format: "png", sheet: true, out: "/x/run" }).sidecar).toBe(
+			join("/x", "run.sheet.json"),
+		);
+		expect(planOutput({ ...base, format: "png" }).sidecar).toBeUndefined();
+	});
 });
