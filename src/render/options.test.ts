@@ -162,7 +162,7 @@ describe("parseBackground", () => {
 		expect(parseBackground("transparent", "webm").a).toBe(0);
 	});
 
-	it.fails("needs fix: a CSS color name like constructor crashes with a TypeError", () => {
+	it("rejects a color name that is an object prototype member", () => {
 		expect(() => parseBackground("constructor", "png")).toThrow(
 			'unrecognized color "constructor"',
 		);

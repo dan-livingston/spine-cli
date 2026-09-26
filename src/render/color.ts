@@ -18,7 +18,7 @@ const NAMED: Record<string, [number, number, number]> = {
 export function parseColor(raw: string): Rgba | null {
 	const value = raw.trim().toLowerCase();
 	if (value === "transparent" || value === "none") return { ...TRANSPARENT };
-	if (NAMED[value]) {
+	if (Object.hasOwn(NAMED, value)) {
 		const [r, g, b] = NAMED[value];
 		return { r: r / 255, g: g / 255, b: b / 255, a: 1 };
 	}
