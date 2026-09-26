@@ -15,6 +15,8 @@ import type {
 	SessionMeta,
 } from "#/render/harness/contract.ts";
 
+import { framesPerBatch } from "#/render/frame-batch.ts";
+
 type HarnessWindow = typeof globalThis & { SpineHarness: HarnessApi };
 
 const SOFTWARE_WEBGL_ARGS = [
@@ -119,14 +121,24 @@ class PlaywrightWorker implements RenderWorker {
 	}
 
 	async render(id: number, req: RenderRequest): Promise<Clip> {
-		const res = await this.withPageErrors(() =>
+		const clip = await this.withPageErrors(() =>
 			this.page.evaluate(
-				(a) => (window as HarnessWindow).SpineHarness.renderAnimation(a.id, a.req),
+				(a) => (window as HarnessWindow).SpineHarness.startClip(a.id, a.req),
 				{ id, req },
 			),
 		);
-		const frames = res.frames.map((b64) => base64ToBytes(b64));
-		return { width: res.width, height: res.height, frames };
+		const maxFrames = framesPerBatch(clip.width, clip.height);
+		const frames: Uint8Array[] = [];
+		while (frames.length < clip.frameCount) {
+			const batch = await this.withPageErrors(() =>
+				this.page.evaluate(
+					(a) => (window as HarnessWindow).SpineHarness.nextFrames(a.id, a.maxFrames),
+					{ id, maxFrames },
+				),
+			);
+			frames.push(...batch.map((b64) => base64ToBytes(b64)));
+		}
+		return { width: clip.width, height: clip.height, frames };
 	}
 
 	async measure(id: number, req: MeasureRequest): Promise<MeasureResult> {

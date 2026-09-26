@@ -2,11 +2,11 @@ import type * as spine42 from "spine-webgl-42";
 
 import type {
 	Box,
+	ClipInfo,
 	ClipTiming,
 	MeasureRequest,
 	MeasureResult,
 	RenderRequest,
-	RenderResult,
 } from "#/render/harness/contract.ts";
 import type { Session } from "#/render/harness/session.ts";
 
@@ -57,25 +57,38 @@ function forEachPose(
 	}
 }
 
-export async function renderAnimation(id: number, req: RenderRequest): Promise<RenderResult> {
+export async function startClip(id: number, req: RenderRequest): Promise<ClipInfo> {
 	const s = sessionFor(id);
 	const anim = animationFor(s, req.animation);
 
 	const box = framingBox(s, req, anim);
-	startClip(s, req, anim);
+	restartClip(s, req, anim);
 	const size = outputSize(box, req.width, req.height);
 	sizeCanvas(s, size.width, size.height);
 	containBoxInView(s, box, size.width, size.height);
 
-	const frames: string[] = [];
-	forEachPose(s, req.skin, clipTimes(req, anim), () => {
-		detachSlotsOutsidePiece(s, req.slots);
-		frames.push(renderFrame(s, size.width, size.height, req));
-	});
-	return { width: size.width, height: size.height, frames };
+	const times = clipTimes(req, anim);
+	s.clip = { req, times, next: 0, prev: 0, width: size.width, height: size.height };
+	return { width: size.width, height: size.height, frameCount: times.length };
 }
 
-function startClip(s: Session, req: RenderRequest, anim: spine42.Animation): void {
+export async function nextFrames(id: number, maxFrames: number): Promise<string[]> {
+	const s = sessionFor(id);
+	const clip = s.clip;
+	if (!clip) throw new Error(`no clip started in session ${id}`);
+	const end = Math.min(clip.times.length, clip.next + Math.max(1, maxFrames));
+	const frames: string[] = [];
+	for (; clip.next < end; clip.next++) {
+		const t = clip.times[clip.next];
+		poseAfter(s, clip.req.skin, t - clip.prev);
+		clip.prev = t;
+		detachSlotsOutsidePiece(s, clip.req.slots);
+		frames.push(renderFrame(s, clip.width, clip.height, clip.req));
+	}
+	return frames;
+}
+
+function restartClip(s: Session, req: RenderRequest, anim: spine42.Animation): void {
 	applySkin(s, req.skin);
 	s.state.setAnimation(0, req.animation, clipRunsPastAnimation(req, anim));
 	poseAfter(s, undefined, 0);
@@ -84,7 +97,7 @@ function startClip(s: Session, req: RenderRequest, anim: spine42.Animation): voi
 function framingBox(s: Session, req: RenderRequest, anim: spine42.Animation): Box {
 	if (req.box) return req.box;
 	if (req.fit !== "bounds") return declaredBoxScaled(s);
-	startClip(s, req, anim);
+	restartClip(s, req, anim);
 	let union: Box | null = null;
 	forEachPose(s, req.skin, clipTimes(req, anim), () => {
 		union = unionBox(union, boundsOf(s));

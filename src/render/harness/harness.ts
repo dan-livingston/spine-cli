@@ -1,6 +1,6 @@
 import type { HarnessApi } from "#/render/harness/contract.ts";
 
-import { measurePieces, renderAnimation } from "#/render/harness/animate.ts";
+import { measurePieces, nextFrames, startClip } from "#/render/harness/animate.ts";
 import { createSession, disposeSession } from "#/render/harness/session.ts";
 
 declare global {
@@ -9,4 +9,4 @@ declare global {
 	}
 }
 
-window.SpineHarness = { createSession, renderAnimation, measurePieces, disposeSession };
+window.SpineHarness = { createSession, startClip, nextFrames, measurePieces, disposeSession };

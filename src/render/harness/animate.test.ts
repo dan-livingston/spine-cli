@@ -4,7 +4,7 @@ import type { Box, ClipTiming, MeasureRequest, RenderRequest } from "#/render/ha
 import type { Session } from "#/render/harness/session.ts";
 import type { StubSessionOptions } from "#/test/harness-fixtures.ts";
 
-import { measurePieces, renderAnimation } from "#/render/harness/animate.ts";
+import { measurePieces, nextFrames, startClip } from "#/render/harness/animate.ts";
 import { decodeFrame, still, stubSession } from "#/test/harness-fixtures.ts";
 
 const registry = vi.hoisted(() => new Map<number, unknown>());
@@ -27,16 +27,21 @@ function open(options: StubSessionOptions = {}) {
 
 const timing: ClipTiming = { animation: "idle", fps: 10, duration: 0, loops: 1, fit: "declared" };
 
-function render(overrides: Partial<RenderRequest> = {}): Promise<{
+const BATCH = 3;
+
+async function render(overrides: Partial<RenderRequest> = {}): Promise<{
 	width: number;
 	height: number;
 	frames: string[];
 }> {
-	return renderAnimation(1, {
+	const clip = await startClip(1, {
 		...timing,
 		background: { r: 0, g: 0, b: 0, a: 0 },
 		...overrides,
 	});
+	const frames: string[] = [];
+	while (frames.length < clip.frameCount) frames.push(...(await nextFrames(1, BATCH)));
+	return { width: clip.width, height: clip.height, frames };
 }
 
 function measure(overrides: Partial<MeasureRequest> = {}) {
@@ -46,7 +51,7 @@ function measure(overrides: Partial<MeasureRequest> = {}) {
 const sliding = (time: number): Box => ({ x: time * 100, y: 0, width: 10, height: 10 });
 const declared = { x: -50, y: 0, width: 100, height: 200 };
 
-describe("renderAnimation timing", () => {
+describe("clip timing", () => {
 	it("renders one frame per 1/fps over the animation length", async () => {
 		const { records } = open();
 		const clip = await render();
@@ -115,7 +120,36 @@ describe("renderAnimation timing", () => {
 	});
 });
 
-describe("renderAnimation content", () => {
+describe("clip batches", () => {
+	it("reports the frame count up front and renders nothing until asked", async () => {
+		const { records } = open();
+		const clip = await startClip(1, { ...timing, background: { r: 0, g: 0, b: 0, a: 0 } });
+		expect(clip.frameCount).toBe(10);
+		expect(records.draws).toEqual([]);
+	});
+
+	it("carries on from the last batch and stops at the end of the clip", async () => {
+		open();
+		await startClip(1, { ...timing, background: { r: 0, g: 0, b: 0, a: 0 } });
+		expect(await nextFrames(1, 4)).toHaveLength(4);
+		expect(await nextFrames(1, 4)).toHaveLength(4);
+		expect(await nextFrames(1, 4)).toHaveLength(2);
+		expect(await nextFrames(1, 4)).toEqual([]);
+	});
+
+	it("renders at least one frame per batch", async () => {
+		open();
+		await startClip(1, { ...timing, background: { r: 0, g: 0, b: 0, a: 0 } });
+		expect(await nextFrames(1, 0)).toHaveLength(1);
+	});
+
+	it("rejects frames before a clip is started", async () => {
+		open();
+		await expect(nextFrames(1, 1)).rejects.toThrow("no clip started in session 1");
+	});
+});
+
+describe("clip content", () => {
 	it("applies the requested skin on every frame", async () => {
 		const { records } = open();
 		await render({ skin: "gold", duration: 0.3 });
@@ -150,7 +184,7 @@ describe("renderAnimation content", () => {
 	});
 });
 
-describe("renderAnimation framing", () => {
+describe("clip framing", () => {
 	it("sizes the output to the scaled declared box by default", async () => {
 		const { camera } = open({ declared, scale: 0.5 });
 		const clip = await render();

@@ -1,7 +1,7 @@
 import * as spine40 from "spine-webgl-40";
 import * as spine42 from "spine-webgl-42";
 
-import type { SessionConfig, SessionMeta } from "#/render/harness/contract.ts";
+import type { RenderRequest, SessionConfig, SessionMeta } from "#/render/harness/contract.ts";
 import type { SpineMajor } from "#/types.ts";
 
 export type Spine = typeof spine42;
@@ -17,6 +17,16 @@ export interface Session {
 	stateData: spine42.AnimationStateData;
 	scale: number;
 	atlasIsPremultiplied: boolean;
+	clip?: ClipCursor;
+}
+
+export interface ClipCursor {
+	req: RenderRequest;
+	times: number[];
+	next: number;
+	prev: number;
+	width: number;
+	height: number;
 }
 
 const PROVISIONAL_CANVAS_SIZE = 16;

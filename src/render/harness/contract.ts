@@ -65,15 +65,16 @@ export interface MeasureResult {
 	declared: Box;
 }
 
-export interface RenderResult {
+export interface ClipInfo {
 	width: number;
 	height: number;
-	frames: string[];
+	frameCount: number;
 }
 
 export interface HarnessApi {
 	createSession(config: SessionConfig): Promise<{ id: number; meta: SessionMeta }>;
-	renderAnimation(id: number, req: RenderRequest): Promise<RenderResult>;
+	startClip(id: number, req: RenderRequest): Promise<ClipInfo>;
+	nextFrames(id: number, maxFrames: number): Promise<string[]>;
 	measurePieces(id: number, req: MeasureRequest): Promise<MeasureResult>;
 	disposeSession(id: number): void;
 }
