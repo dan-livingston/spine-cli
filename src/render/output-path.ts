@@ -43,10 +43,14 @@ export function planOutput(ctx: OutputContext): OutputTarget {
 		return { path: ctx.out, isDir: ctx.format === "pngseq" };
 	}
 	const dir = ctx.outDir ?? dirname(ctx.jsonPath);
-	let base = `${ctx.skeletonName}_${ctx.animation}`;
+	let base = `${ctx.skeletonName}_${flattenFolders(ctx.animation)}`;
 	if (ctx.piece) base += `_${ctx.piece}`;
 	if (ctx.format === "pngseq") {
 		return { path: join(dir, base), isDir: true };
 	}
 	return { path: join(dir, base + EXT[ctx.format]), isDir: false };
+}
+
+function flattenFolders(name: string): string {
+	return name.replace(/[\\/]/g, "_");
 }

@@ -68,7 +68,7 @@ If the skeleton has more than one animation, `-a` is required. The error lists t
 | `--concurrency <n>`             | Skeletons rendered in parallel in a batch. Default 1.                                  |
 | `--dry-run`                     | List the files that would be written.                                                  |
 
-Without `-o`, files are named `{skeleton}_{animation}.{ext}` and written beside the skeleton, or into `--out-dir`. A batch skips skeletons it cannot load and reports them.
+Without `-o`, files are named `{skeleton}_{animation}.{ext}` and written beside the skeleton, or into `--out-dir`. Slashes in an animation name become `_`, so `combat/attack` writes `hero_combat_attack.gif`. A batch skips skeletons it cannot load and reports them.
 
 Format notes:
 

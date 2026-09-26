@@ -71,8 +71,12 @@ describe("planOutput", () => {
 		});
 	});
 
-	it.fails("needs fix: an animation name with a Spine folder slash escapes into a subdirectory", () => {
-		const target = planOutput({ ...base, animation: "combat/attack" });
-		expect(target.path.slice(chars.length + 1)).not.toMatch(/[\\/]/);
+	it("flattens Spine folder slashes in an animation name into underscores", () => {
+		expect(planOutput({ ...base, animation: "combat/attack" }).path).toBe(
+			join(chars, "hero_combat_attack.gif"),
+		);
+		expect(planOutput({ ...base, animation: "combat\\melee/jab" }).path).toBe(
+			join(chars, "hero_combat_melee_jab.gif"),
+		);
 	});
 });
