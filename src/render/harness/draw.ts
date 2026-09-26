@@ -1,4 +1,4 @@
-import type { Box, RenderRequest } from "#/render/harness/contract.ts";
+import type { Box, RenderRequest, Rgba } from "#/render/harness/contract.ts";
 import type { Session } from "#/render/harness/session.ts";
 
 export function sizeCanvas(s: Session, w: number, h: number): void {
@@ -19,7 +19,7 @@ export function containBoxInView(s: Session, box: Box, w: number, h: number): vo
 
 export function renderFrame(s: Session, w: number, h: number, req: RenderRequest): string {
 	const gl = s.gl;
-	gl.clearColor(req.background.r, req.background.g, req.background.b, req.background.a);
+	gl.clearColor(...clearColorFor(req.background, s.atlasIsPremultiplied));
 	gl.clear(gl.COLOR_BUFFER_BIT);
 
 	s.renderer.begin();
@@ -31,6 +31,11 @@ export function renderFrame(s: Session, w: number, h: number, req: RenderRequest
 	if (s.atlasIsPremultiplied) toStraightAlpha(buf);
 	flipBottomUpRowsToTopDown(buf, w, h);
 	return toBase64(buf);
+}
+
+function clearColorFor(background: Rgba, premultiplied: boolean): [number, number, number, number] {
+	const { r, g, b, a } = background;
+	return premultiplied ? [r * a, g * a, b * a, a] : [r, g, b, a];
 }
 
 function toStraightAlpha(buf: Uint8Array): void {

@@ -105,7 +105,7 @@ describe("renderFrame", () => {
 		]);
 	});
 
-	it.fails("needs fix: a translucent background is cleared unpremultiplied on a premultiplied atlas, so un-premultiplying brightens it", () => {
+	it("premultiplies a translucent background on a premultiplied atlas so it reads back unchanged", () => {
 		const { session } = stubSession({ premultiplied: true });
 		const frame = decodeFrame(
 			renderFrame(session, 1, 1, request({ r: 0.5, g: 0.5, b: 0.5, a: 0.5 })),
